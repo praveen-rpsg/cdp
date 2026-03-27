@@ -76,6 +76,10 @@ class AudienceEstimateResponse(BaseModel):
     estimated_count: int | None
     sql: str
     status: str
+    # Set operation results (optional)
+    set_operation_counts: dict | None = None
+    # Split results (optional)
+    split_counts: list[dict] | None = None
 
 
 class AudiencePreviewRequest(BaseModel):

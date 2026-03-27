@@ -1,0 +1,40 @@
+name: 'spencers_cdp'
+version: '1.0.0'
+config-version: 2
+
+profile: 'spencers_cdp'
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  spencers_cdp:
+    staging:
+      +materialized: view
+      +schema: staging
+    intermediate:
+      +materialized: table
+      +schema: silver
+    marts:
+      identity:
+        +materialized: table
+        +schema: silver_identity
+      sales:
+        +materialized: table
+        +schema: silver_gold
+      customer:
+        +materialized: table
+        +schema: silver_reverse_etl
+
+vars:
+  identity_resolution_confidence_threshold: 0.8
+  churn_days_threshold: 90
+  rfm_recency_buckets: [30, 60, 90, 180]

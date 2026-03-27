@@ -1,0 +1,39 @@
+version: 2
+
+models:
+  - name: stg_bill_transactions
+    description: "Cleaned and typed bill delta transactions from raw unmasked POS files (76 columns)"
+    columns:
+      - name: bill_id
+        description: "Composite bill identifier (store-billno-date)"
+        tests:
+          - not_null
+      - name: bill_date
+        description: "Transaction date"
+        tests:
+          - not_null
+      - name: store_code
+        description: "Store/plant code"
+        tests:
+          - not_null
+      - name: delivery_channel
+        description: "Derived: Online (till 9998/9999) or Store"
+        tests:
+          - accepted_values:
+              values: ['Online', 'Store']
+
+  - name: stg_bill_identifiers
+    description: "Distinct mobile identifiers from POS transactions for identity resolution"
+    columns:
+      - name: mobile
+        description: "Cleaned 10-digit mobile number"
+        tests:
+          - not_null
+
+  - name: stg_bill_summary
+    description: "Bill-level summary with one row per bill, billing time, promo/gift flags"
+    columns:
+      - name: bill_id
+        description: "Composite bill identifier"
+        tests:
+          - not_null
