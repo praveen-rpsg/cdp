@@ -138,7 +138,7 @@ async def preview_audience(payload: AudiencePreviewRequest):
 @router.post("/compile", response_model=CompileResponse)
 async def compile_segment_query(payload: CompileRequest):
     """
-    Compile segment rules into Athena SQL without executing.
+    Compile segment rules into PostgreSQL SQL without executing.
     Useful for power users who want to review/modify the generated SQL.
     """
     sql = service.compile_segment_query(

@@ -1,0 +1,105 @@
+# ============================================================================
+# Spencer's CDP - Reverse ETL Configuration
+# ============================================================================
+# Defines audience syncs and attribute mappings for downstream systems.
+
+database:
+  host: "${PG_HOST:-localhost}"
+  port: "${PG_PORT:-5432}"
+  dbname: "${PG_DB:-cdp_meta}"
+  user: "${PG_USER:-cdp}"
+  password: "${PG_PASSWORD:-cdp}"
+
+# Source table for customer attributes
+source:
+  schema: reverse_etl
+  table: customer_behavioral_attributes
+  primary_key: customer_id
+  identity_join:
+    table: identity.unified_profiles
+    key: unified_id
+    mobile_field: canonical_mobile
+    email_field: canonical_email
+
+# Audience definitions for sync
+audiences:
+  - id: "high_value_promoters"
+    name: "High Value Promoters"
+    description: "NPS Promoters with high engagement"
+    filter: >
+      latest_nps_score >= 9
+      AND lifecycle_stage IN ('New', 'Active')
+      AND has_used_promo = TRUE
+    destinations:
+      - type: webhook
+        url: "${WEBHOOK_URL:-http://localhost:8000/api/v1/audiences/sync}"
+        batch_size: 100
+
+  - id: "at_risk_customers"
+    name: "At Risk Customers"
+    description: "Customers showing churn signals"
+    filter: >
+      churn_risk_score >= 0.7
+      AND lifecycle_stage IN ('Lapsed', 'Churned')
+    destinations:
+      - type: webhook
+        url: "${WEBHOOK_URL:-http://localhost:8000/api/v1/audiences/sync}"
+        batch_size: 100
+
+  - id: "new_customers_no_feedback"
+    name: "New Customers Without Feedback"
+    description: "Recently acquired customers who haven't given feedback"
+    filter: >
+      lifecycle_stage = 'New'
+      AND has_given_feedback = FALSE
+    destinations:
+      - type: csv
+        output_dir: "./exports"
+
+  - id: "promo_responsive"
+    name: "Promo Responsive Customers"
+    description: "Customers who actively use promotions"
+    filter: >
+      has_used_promo = TRUE
+      AND promo_usage_count >= 2
+      AND lifecycle_stage IN ('Active', 'New')
+    destinations:
+      - type: webhook
+        url: "${WEBHOOK_URL:-http://localhost:8000/api/v1/audiences/sync}"
+        batch_size: 100
+
+# Attribute sync mappings for reverse ETL
+attribute_mappings:
+  - source_column: lifecycle_stage
+    destination_field: user_lifecycle
+    transform: null
+
+  - source_column: churn_risk_score
+    destination_field: churn_risk
+    transform: "ROUND(churn_risk_score * 100)::INT"
+
+  - source_column: nps_category
+    destination_field: nps_segment
+    transform: null
+
+  - source_column: latest_nps_score
+    destination_field: nps_score
+    transform: null
+
+  - source_column: total_cashback
+    destination_field: total_cashback_earned
+    transform: "ROUND(total_cashback, 2)"
+
+  - source_column: customer_tenure_days
+    destination_field: days_since_signup
+    transform: null
+
+  - source_column: home_store_code
+    destination_field: preferred_store
+    transform: null
+
+# Sync schedule
+schedule:
+  audiences: "0 */4 * * *"       # Every 4 hours
+  attributes: "0 */6 * * *"     # Every 6 hours
+  full_refresh: "0 2 * * 0"     # Weekly Sunday 2 AM

@@ -82,7 +82,7 @@ export interface TimeWindow {
 
 export interface AttributeCondition {
   type: "attribute";
-  id: string; // client-side unique ID for React keys
+  id: string;
   attribute_key: string;
   operator: string;
   value: any;
@@ -136,11 +136,61 @@ export interface ConditionGroup {
   conditions: Condition[];
 }
 
+// =============================================================================
+// RANK & SPLIT
+// =============================================================================
+
+export interface RankConfig {
+  enabled: boolean;
+  attribute: string | null;
+  order: "asc" | "desc";
+  profile_limit: number | null;
+}
+
+export interface SplitEntry {
+  name: string;
+  percent?: number;
+  value?: string;
+}
+
+export interface SplitConfig {
+  enabled: boolean;
+  split_type: "percent" | "attribute";
+  attribute: string | null;
+  num_splits: number;
+  splits: SplitEntry[];
+}
+
+// =============================================================================
+// SET OPERATIONS (Union, Overlap, Exclude)
+// =============================================================================
+
+export type SetOperationType = "union" | "overlap" | "exclude_overlap" | "exclude";
+
+export interface SetOperationEntry {
+  segment_id?: string;
+  rules?: SegmentDefinition;
+  name?: string;
+}
+
+export interface SetOperation {
+  enabled: boolean;
+  operation: SetOperationType;
+  segments: SetOperationEntry[];
+}
+
+// =============================================================================
+// SEGMENT DEFINITION
+// =============================================================================
+
 export interface SegmentDefinition {
   root: ConditionGroup;
   limit?: number;
   order_by?: string;
   order_direction?: "asc" | "desc";
+  rank?: RankConfig;
+  split?: SplitConfig;
+  set_operation?: SetOperation;
 }
 
 // =============================================================================
@@ -184,6 +234,17 @@ export interface Brand {
   channels: string[];
   business_model: string;
   is_active: boolean;
+}
+
+// =============================================================================
+// SPLIT COUNT RESULT
+// =============================================================================
+
+export interface SplitCountResult {
+  name: string;
+  count: number | null;
+  percent?: number;
+  value?: string;
 }
 
 // =============================================================================
@@ -239,6 +300,17 @@ export const OPERATOR_LABELS: Record<string, string> = {
 };
 
 // =============================================================================
+// SET OPERATION LABELS
+// =============================================================================
+
+export const SET_OPERATION_LABELS: Record<SetOperationType, { label: string; description: string; color: string }> = {
+  union: { label: "Union", description: "Combined (OR) — all profiles from any segment", color: "#22c55e" },
+  overlap: { label: "Overlap", description: "Intersection (AND) — only profiles in ALL segments", color: "#3b82f6" },
+  exclude_overlap: { label: "Exclude Overlap", description: "First segment minus overlapping profiles", color: "#f59e0b" },
+  exclude: { label: "Exclude", description: "First segment minus all other segments", color: "#ef4444" },
+};
+
+// =============================================================================
 // CATEGORY DISPLAY CONFIG
 // =============================================================================
 
@@ -270,3 +342,63 @@ export const CATEGORY_CONFIG: Record<
   digital_adoption: { label: "Digital Adoption", icon: "wifi", color: "#7c3aed" },
   customer_experience: { label: "Customer Experience", icon: "heart", color: "#e11d48" },
 };
+
+// Rankable numeric attributes for Spencer's (per Resulticks attribute design)
+export const RANKABLE_ATTRIBUTES = [
+  // ── Precalculated / Bill Summary ──
+  { key: "txn.total_spend", label: "Total Spend (LTV)" },
+  { key: "txn.total_bills", label: "Total Bills (NOB)" },
+  { key: "txn.total_visits", label: "Total Visits" },
+  { key: "txn.spend_per_bill", label: "Spend Per Bill (ABV)" },
+  { key: "txn.spend_per_visit", label: "Spend Per Visit" },
+  { key: "txn.avg_items_per_bill", label: "Avg Items Per Bill" },
+  { key: "txn.total_discount", label: "Total Discount" },
+  { key: "txn.distinct_store_count", label: "Unique Stores Visited" },
+  { key: "txn.distinct_article_count", label: "Distinct Articles Bought" },
+  { key: "txn.distinct_months", label: "Distinct Months Active" },
+  { key: "txn.avg_billing_time_secs", label: "Avg Billing Time (sec)" },
+  { key: "txn.return_bill_count", label: "Return Bills" },
+  { key: "txn.promo_bill_count", label: "Promo Bills" },
+  { key: "txn.weekend_bill_count", label: "Weekend Bills" },
+  { key: "txn.wednesday_bill_count", label: "Wednesday Bills" },
+  // ── Temporal / Recency ──
+  { key: "temporal.recency_days", label: "Recency (Days)" },
+  { key: "temporal.tenure_days", label: "Tenure (Days)" },
+  { key: "temporal.dgbt_fs", label: "DGBT (Days Gap Between Txns)" },
+  // ── Decile / Ranking ──
+  { key: "decile.spend_decile", label: "Spend Decile" },
+  { key: "decile.nob_decile", label: "NOB Decile" },
+  // ── Channel ──
+  { key: "channel.store_spend", label: "Store Spend" },
+  { key: "channel.online_spend", label: "Online Spend" },
+  { key: "channel.store_bills", label: "Store Bills" },
+  { key: "channel.online_bills", label: "Online Bills" },
+];
+
+// Splittable categorical attributes for Spencer's
+export const SPLITTABLE_ATTRIBUTES = [
+  // ── Lifecycle / Segmentation ──
+  { key: "lifecycle.l1_segment", label: "L1 Segment (HVHF/LVHF/HVLF/LVLF)" },
+  { key: "lifecycle.l2_segment", label: "L2 Segment (STAR/LOYAL/Active/Lapsed/...)" },
+  { key: "lifecycle.lifecycle_stage", label: "Lifecycle Stage" },
+  // ── Geographic ──
+  { key: "geo.city", label: "City" },
+  { key: "geo.zone", label: "Zone" },
+  { key: "geo.state", label: "State" },
+  { key: "geo.store_format", label: "Store Format" },
+  // ── Channel ──
+  { key: "channel.channel_presence", label: "Channel (Online/Offline/Omni)" },
+  // ── Store / Favourites ──
+  { key: "store.fav_store_type", label: "Favourite Store Type" },
+  { key: "store.fav_day", label: "Favourite Day" },
+  // ── Product ──
+  { key: "product.fav_article_by_spend_desc", label: "Fav Article (by Spend)" },
+  { key: "product.fav_article_by_nob_desc", label: "Fav Article (by NOB)" },
+  // ── Consent ──
+  { key: "consent.dnd", label: "DND Status" },
+  { key: "consent.accepts_email_marketing", label: "Accepts Email Marketing" },
+  { key: "consent.accepts_sms_marketing", label: "Accepts SMS Marketing" },
+  // ── Decile ──
+  { key: "decile.spend_decile", label: "Spend Decile (1-10)" },
+  { key: "decile.nob_decile", label: "NOB Decile (1-10)" },
+];

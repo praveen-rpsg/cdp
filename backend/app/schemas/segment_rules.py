@@ -106,11 +106,49 @@ class ConditionGroup(BaseModel):
 ConditionGroup.model_rebuild()
 
 
+class RankConfig(BaseModel):
+    """Rank profiles by a numeric attribute."""
+    enabled: bool = False
+    attribute: str | None = None          # e.g. "txn.total_revenue"
+    order: Literal["asc", "desc"] = "desc"
+    profile_limit: int | None = None      # Top/bottom N
+
+
+class SplitEntry(BaseModel):
+    """A single split bucket."""
+    name: str = ""
+    percent: int | None = None            # For percent-based splits
+    value: str | None = None              # For attribute-based splits
+
+
+class SplitConfig(BaseModel):
+    """Split an audience into sub-segments."""
+    enabled: bool = False
+    split_type: Literal["percent", "attribute"] = "percent"
+    attribute: str | None = None          # For attribute splits
+    num_splits: int = 2
+    splits: list[SplitEntry] = []
+
+
+class SetOperationEntry(BaseModel):
+    """A reference to another segment for set operations."""
+    segment_id: str | None = None
+    rules: "SegmentDefinition | None" = None   # Inline rules
+    name: str | None = None
+
+
+class SetOperation(BaseModel):
+    """Combine multiple segments via Union/Overlap/Exclude."""
+    enabled: bool = False
+    operation: Literal["union", "overlap", "exclude_overlap", "exclude"] = "union"
+    segments: list[SetOperationEntry] = []
+
+
 class SegmentDefinition(BaseModel):
     """
     The top-level segment rule definition.
     This is what gets stored in the segment.rules JSONB column
-    and compiled into Athena SQL.
+    and compiled into PostgreSQL (or Athena) SQL.
     """
     root: ConditionGroup
     # Optional: limit results
@@ -118,6 +156,15 @@ class SegmentDefinition(BaseModel):
     # Optional: order/sort
     order_by: str | None = None
     order_direction: Literal["asc", "desc"] = "desc"
+    # Rank & Split
+    rank: RankConfig | None = None
+    split: SplitConfig | None = None
+    # Set operations (Union, Overlap, Exclude)
+    set_operation: SetOperation | None = None
+
+
+# Rebuild for forward references
+SetOperationEntry.model_rebuild()
 
 
 # =============================================================================
@@ -129,52 +176,37 @@ EXAMPLE_HIGH_VALUE_AT_RISK = SegmentDefinition(
         logical_operator=LogicalOperator.AND,
         conditions=[
             AttributeCondition(
-                attribute_key="txn.total_revenue",
+                attribute_key="txn.total_spend",
                 operator="greater_than",
                 value=50000,
             ),
             AttributeCondition(
-                attribute_key="txn.days_since_last_purchase",
+                attribute_key="temporal.recency_days",
                 operator="greater_than",
                 value=60,
             ),
             AttributeCondition(
-                attribute_key="predict.churn_risk_tier",
-                operator="in_list",
-                value=["high", "critical"],
+                attribute_key="lifecycle.lifecycle_stage",
+                operator="equals",
+                value="At Risk",
             ),
         ],
     )
 )
 
-EXAMPLE_CROSS_BRAND_GROCERY_BUYERS = SegmentDefinition(
+EXAMPLE_STAR_CUSTOMERS = SegmentDefinition(
     root=ConditionGroup(
         logical_operator=LogicalOperator.AND,
         conditions=[
             AttributeCondition(
-                attribute_key="identity.is_cross_brand_customer",
-                operator="is_true",
-                value=True,
-            ),
-            ConditionGroup(
-                logical_operator=LogicalOperator.OR,
-                conditions=[
-                    AttributeCondition(
-                        attribute_key="identity.known_brands",
-                        operator="contains",
-                        value="spencers",
-                    ),
-                    AttributeCondition(
-                        attribute_key="identity.known_brands",
-                        operator="contains",
-                        value="natures_basket",
-                    ),
-                ],
+                attribute_key="lifecycle.l2_segment",
+                operator="equals",
+                value="STAR",
             ),
             AttributeCondition(
-                attribute_key="txn.purchase_frequency_90d",
+                attribute_key="txn.total_bills",
                 operator="greater_than_or_equal",
-                value=3,
+                value=4,
             ),
         ],
     )

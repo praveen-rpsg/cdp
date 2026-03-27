@@ -1,10 +1,11 @@
 /**
  * Segment Builder Store (Zustand)
  *
- * Manages the state of the segment builder UI:
+ * Manages the state of the segment builder UI including:
  * - Current rule tree being built
- * - Selected brand context
- * - Audience estimate
+ * - Rank & Split configuration
+ * - Set operations (Union, Overlap, Exclude)
+ * - Audience estimation with real counts
  * - Attribute catalog cache
  */
 
@@ -15,9 +16,14 @@ import type {
   Brand,
   Condition,
   ConditionGroup,
-  EventCondition,
   LogicalOperator,
+  RankConfig,
   SegmentDefinition,
+  SetOperation,
+  SetOperationType,
+  SplitConfig,
+  SplitCountResult,
+  SplitEntry,
 } from "../types/segment";
 
 function generateId(): string {
@@ -64,10 +70,19 @@ interface SegmentBuilderState {
   isEstimating: boolean;
   compiledSQL: string | null;
 
+  // Rank & Split
+  rankConfig: RankConfig;
+  splitConfig: SplitConfig;
+  splitCounts: SplitCountResult[];
+
+  // Set Operations
+  setOperation: SetOperation;
+  setOperationCounts: { operation: string; combined_count: number | null; segment_counts: number[] } | null;
+
   // UI state
   isDirty: boolean;
 
-  // Actions
+  // Actions - Metadata
   setSegmentName: (name: string) => void;
   setSegmentDescription: (desc: string) => void;
   setSegmentType: (type: string) => void;
@@ -77,6 +92,18 @@ interface SegmentBuilderState {
   setAudienceCount: (count: number | null) => void;
   setIsEstimating: (v: boolean) => void;
   setCompiledSQL: (sql: string | null) => void;
+
+  // Actions - Rank & Split
+  setRankConfig: (config: Partial<RankConfig>) => void;
+  setSplitConfig: (config: Partial<SplitConfig>) => void;
+  setSplitCounts: (counts: SplitCountResult[]) => void;
+  addSplitEntry: () => void;
+  removeSplitEntry: (index: number) => void;
+  updateSplitEntry: (index: number, entry: Partial<SplitEntry>) => void;
+
+  // Actions - Set Operations
+  setSetOperation: (config: Partial<SetOperation>) => void;
+  setSetOperationCounts: (counts: any) => void;
 
   // Rule tree mutations
   addCondition: (groupId: string, condition?: Condition) => void;
@@ -91,9 +118,6 @@ interface SegmentBuilderState {
   getSegmentDefinition: () => SegmentDefinition;
 }
 
-/**
- * Recursively find and mutate a node in the condition tree.
- */
 function findAndMutate(
   group: ConditionGroup,
   targetId: string,
@@ -140,18 +164,67 @@ export const useSegmentStore = create<SegmentBuilderState>((set, get) => ({
   compiledSQL: null,
   isDirty: false,
 
+  // Rank & Split defaults
+  rankConfig: { enabled: false, attribute: null, order: "desc", profile_limit: null },
+  splitConfig: { enabled: false, split_type: "percent", attribute: null, num_splits: 2, splits: [] },
+  splitCounts: [],
+
+  // Set operation defaults
+  setOperation: { enabled: false, operation: "union", segments: [] },
+  setOperationCounts: null,
+
   setSegmentName: (name) => set({ segmentName: name, isDirty: true }),
-  setSegmentDescription: (desc) =>
-    set({ segmentDescription: desc, isDirty: true }),
+  setSegmentDescription: (desc) => set({ segmentDescription: desc, isDirty: true }),
   setSegmentType: (type) => set({ segmentType: type, isDirty: true }),
-  setSelectedBrand: (code) =>
-    set({ selectedBrandCode: code, audienceCount: null }),
+  setSelectedBrand: (code) => set({ selectedBrandCode: code, audienceCount: null }),
   setBrands: (brands) => set({ brands }),
-  setAttributeCatalog: (attrs) =>
-    set({ attributeCatalog: attrs, catalogLoaded: true }),
+  setAttributeCatalog: (attrs) => set({ attributeCatalog: attrs, catalogLoaded: true }),
   setAudienceCount: (count) => set({ audienceCount: count }),
   setIsEstimating: (v) => set({ isEstimating: v }),
   setCompiledSQL: (sql) => set({ compiledSQL: sql }),
+
+  // Rank
+  setRankConfig: (config) => set((state) => ({
+    rankConfig: { ...state.rankConfig, ...config },
+    isDirty: true,
+    audienceCount: null,
+  })),
+
+  // Split
+  setSplitConfig: (config) => set((state) => ({
+    splitConfig: { ...state.splitConfig, ...config },
+    isDirty: true,
+  })),
+  setSplitCounts: (counts) => set({ splitCounts: counts }),
+  addSplitEntry: () => set((state) => ({
+    splitConfig: {
+      ...state.splitConfig,
+      splits: [...state.splitConfig.splits, { name: `Split ${state.splitConfig.splits.length + 1}`, percent: 50 }],
+    },
+    isDirty: true,
+  })),
+  removeSplitEntry: (index) => set((state) => ({
+    splitConfig: {
+      ...state.splitConfig,
+      splits: state.splitConfig.splits.filter((_, i) => i !== index),
+    },
+    isDirty: true,
+  })),
+  updateSplitEntry: (index, entry) => set((state) => ({
+    splitConfig: {
+      ...state.splitConfig,
+      splits: state.splitConfig.splits.map((s, i) => i === index ? { ...s, ...entry } : s),
+    },
+    isDirty: true,
+  })),
+
+  // Set Operations
+  setSetOperation: (config) => set((state) => ({
+    setOperation: { ...state.setOperation, ...config },
+    isDirty: true,
+    audienceCount: null,
+  })),
+  setSetOperationCounts: (counts) => set({ setOperationCounts: counts }),
 
   addCondition: (groupId, condition) => {
     const rules = structuredClone(get().rules);
@@ -191,8 +264,7 @@ export const useSegmentStore = create<SegmentBuilderState>((set, get) => ({
     const rules = structuredClone(get().rules);
     const group = findGroup(rules, groupId);
     if (group) {
-      group.logical_operator =
-        group.logical_operator === "and" ? "or" : "and";
+      group.logical_operator = group.logical_operator === "and" ? "or" : "and";
     }
     set({ rules, isDirty: true, audienceCount: null });
   },
@@ -203,12 +275,17 @@ export const useSegmentStore = create<SegmentBuilderState>((set, get) => ({
       audienceCount: null,
       compiledSQL: null,
       isDirty: false,
+      rankConfig: { enabled: false, attribute: null, order: "desc", profile_limit: null },
+      splitConfig: { enabled: false, split_type: "percent", attribute: null, num_splits: 2, splits: [] },
+      splitCounts: [],
+      setOperation: { enabled: false, operation: "union", segments: [] },
+      setOperationCounts: null,
     }),
 
   loadRules: (rules) => set({ rules, isDirty: false }),
 
   getSegmentDefinition: () => {
-    const { rules } = get();
+    const { rules, rankConfig, splitConfig, setOperation } = get();
     // Strip client-side IDs for API submission
     const stripIds = (group: ConditionGroup): any => ({
       type: "group",
@@ -219,6 +296,24 @@ export const useSegmentStore = create<SegmentBuilderState>((set, get) => ({
         return rest;
       }),
     });
-    return { root: stripIds(rules) };
+
+    const def: any = { root: stripIds(rules) };
+
+    // Include rank config if enabled
+    if (rankConfig.enabled) {
+      def.rank = rankConfig;
+    }
+
+    // Include split config if enabled
+    if (splitConfig.enabled && splitConfig.splits.length > 0) {
+      def.split = splitConfig;
+    }
+
+    // Include set operation if enabled
+    if (setOperation.enabled && setOperation.segments.length > 0) {
+      def.set_operation = setOperation;
+    }
+
+    return def;
   },
 }));
