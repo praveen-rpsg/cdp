@@ -55,7 +55,7 @@ class Settings(BaseSettings):
     model_config = {"env_prefix": "CDP_", "env_nested_delimiter": "__"}
 
     # --- App ---
-    app_name: str = "Composable CDP"
+    app_name: str = "UNIFY360"
     app_version: str = "0.1.0"
     debug: bool = False
     api_prefix: str = "/api/v1"
