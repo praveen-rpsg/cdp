@@ -1,4 +1,4 @@
-# NEXUS CDP — Spencer's Customer Data Platform
+# UNIFY360 CDP — Corp's Customer Data Platform
 
 A composable Customer Data Platform built for RPSG Group's Spencer's Retail.
 Handles identity resolution across 20M+ CIH profiles and POS transactions,
