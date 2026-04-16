@@ -1,0 +1,27 @@
+version: 2
+models:
+  - name: customer_transaction_summary
+    columns:
+      - name: mobile_number
+        tests: [not_null]
+  - name: daily_store_sales
+    columns:
+      - name: bill_date
+        tests: [not_null]
+      - name: store_code
+        tests: [not_null]
+  - name: customer_channel_summary
+    columns:
+      - name: mobile_number
+        tests: [not_null]
+  - name: customer_product_summary
+    columns:
+      - name: mobile_number
+        tests: [not_null]
+  - name: s_fact_bill_transactions
+    description: "Silver fact table: cleaned bill transactions at line-item level. ETL from bronze.raw_bill_delta via stg_bill_transactions."
+    columns:
+      - name: mobile_number
+        tests: [not_null]
+      - name: bill_date
+        tests: [not_null]

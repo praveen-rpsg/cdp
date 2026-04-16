@@ -1,0 +1,32 @@
+
+
+SELECT
+    unified_id,
+    canonical_mobile,
+    surrogate_id,
+    cih_original_surrogate_id,
+    COALESCE(name, NULLIF(TRIM(COALESCE(first_name,'') || ' ' || COALESCE(last_name,'')), '')) AS display_name,
+    first_name,
+    last_name,
+    email,
+    city,
+    pincode,
+    street,
+    region,
+    store_code AS registered_store,
+    status,
+    dob,
+    age,
+    customer_group,
+    occupation,
+    whatsapp,
+    dnd,
+    gw_customer_flag,
+    accepts_email_marketing,
+    accepts_sms_marketing,
+    cih_total_orders,
+    cih_total_spent,
+    primary_source,
+    has_transactions,
+    NOW() AS profile_updated_at
+FROM "cdp_meta"."silver"."int_identity_resolved"

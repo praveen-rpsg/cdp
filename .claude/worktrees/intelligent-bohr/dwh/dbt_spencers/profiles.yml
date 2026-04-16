@@ -1,0 +1,12 @@
+spencers_cdp:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('PG_HOST', 'localhost') }}"
+      port: "{{ env_var('PG_PORT', '5432') | int }}"
+      user: "{{ env_var('PG_USER', 'cdp') }}"
+      pass: "{{ env_var('PG_PASSWORD', 'cdp') }}"
+      dbname: "{{ env_var('PG_DB', 'cdp_meta') }}"
+      schema: silver
+      threads: 4

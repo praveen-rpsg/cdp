@@ -2,6 +2,22 @@ node_modules/
 __pycache__/
 *.pyc
 .env
+.env.prod
+.env.*.local
 dist/
 .vite/
 *.log
+
+# Python venv
+backend/.venv/
+
+# DB backups — too large for git (upload via scp)
+*.backup
+*.dump
+*.sql.gz
+
+# Claude worktrees
+.claude/worktrees/
+
+# macOS
+.DS_Store

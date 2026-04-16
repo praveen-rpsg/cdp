@@ -1,0 +1,21 @@
+version: 2
+models:
+  - name: unified_profiles
+    columns:
+      - name: unified_id
+        tests: [not_null, unique]
+      - name: canonical_mobile
+        tests: [not_null]
+  - name: identity_edges
+    columns:
+      - name: unified_id
+        tests: [not_null]
+      - name: identifier_type
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['mobile', 'email', 'name', 'store_affinity']
+  - name: identity_graph_summary
+    columns:
+      - name: unified_id
+        tests: [not_null, unique]

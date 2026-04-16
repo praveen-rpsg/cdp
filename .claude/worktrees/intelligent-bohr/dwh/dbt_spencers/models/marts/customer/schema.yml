@@ -1,0 +1,10 @@
+version: 2
+models:
+  - name: customer_behavioral_attributes
+    columns:
+      - name: customer_id
+        tests: [not_null, unique]
+      - name: lifecycle_stage
+        tests:
+          - accepted_values:
+              values: ['Active', 'At Risk', 'Lapsed', 'Churned', 'Registered']

@@ -1,0 +1,30 @@
+version: 2
+
+sources:
+  - name: bronze
+    schema: bronze
+    tables:
+      - name: raw_customer_data
+        description: "Customer loyalty/CRM data from Spencer's POS systems"
+      - name: raw_location_master
+        description: "Store location master data"
+      - name: raw_article_master
+        description: "Offline article/product master (ZABM)"
+      - name: raw_ecom_category
+        description: "E-commerce category hierarchy"
+      - name: raw_ecom_product_master
+        description: "Online product master from e-commerce platform"
+      - name: raw_nps_survey
+        description: "Net Promoter Score survey responses"
+      - name: raw_promotions
+        description: "Promotional campaigns and offers"
+      - name: raw_promo_cashback
+        description: "Promotional cashback transactions linked to mobile"
+      - name: raw_festival_list
+        description: "Festival/campaign calendar"
+      - name: raw_yvm_feedback
+        description: "Your Voice Matters customer feedback/complaints"
+      - name: raw_bill_delta
+        description: "POS bill/transaction line-item data (BILL_DELTA) - raw unmasked with mobile numbers"
+      - name: raw_cih_profiles
+        description: "CIH parquet golden records - 20M+ customer identity seed from Resulticks"

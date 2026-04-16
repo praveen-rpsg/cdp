@@ -1,0 +1,80 @@
+services:
+  # ─── PostgreSQL ─────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:18-alpine
+    container_name: cdp_postgres
+    restart: always
+    env_file: .env.prod
+    environment:
+      POSTGRES_USER: ${PG_USER}
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+      POSTGRES_DB: ${PG_DB}
+    ports:
+      - "127.0.0.1:5435:5432"       # internal only — no public exposure
+    volumes:
+      - cdp_pgdata:/var/lib/postgresql/data
+      - ./dwh/sql:/docker-entrypoint-initdb.d
+    networks:
+      - cdp_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ─── Redis ──────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: cdp_redis
+    restart: always
+    ports:
+      - "127.0.0.1:6381:6379"       # internal only — no public exposure
+    networks:
+      - cdp_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ─── Backend ────────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    container_name: cdp_backend
+    restart: always
+    env_file: .env.prod
+    ports:
+      - "127.0.0.1:8002:8002"       # internal only — proxied via frontend nginx
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - cdp_network
+
+  # ─── Frontend (React + Nginx) ────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+      args:
+        VITE_API_URL: http://${EC2_PUBLIC_IP}:3002/api
+    container_name: cdp_frontend
+    restart: always
+    ports:
+      - "0.0.0.0:3002:3002"         # public — only this port is exposed
+    depends_on:
+      - backend
+    networks:
+      - cdp_network
+
+networks:
+  cdp_network:
+    name: cdp_network               # isolated — won't touch existing project
+
+volumes:
+  cdp_pgdata:
+    name: cdp_pgdata                # isolated — won't touch existing volumes

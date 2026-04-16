@@ -33,10 +33,10 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-RAW_DIR = os.getenv("RAW_DIR", r"D:\WORK\Sample Files\RAW\RAW")
+RAW_DIR = os.getenv("RAW_DIR", r"C:\RAW")
 SAMPLE_DIR = os.getenv("SAMPLE_DIR", r"D:\WORK\Sample Files\01 Spencers\masked")
-CIH_DIR = os.getenv("CIH_DIR", r"C:\Users\HP\Downloads\CIH_parquet\CIH_parquet")
-DB_URL = os.getenv("DATABASE_URL", "postgresql://cdp:cdp@localhost:5432/cdp_meta")
+CIH_DIR = os.getenv("CIH_DIR", r"C:\CIH_parquet")
+DB_URL = os.getenv("DATABASE_URL", "postgresql://postgres:Raghav_1174@localhost:5432/CDP-Spencers")
 
 
 def get_conn():

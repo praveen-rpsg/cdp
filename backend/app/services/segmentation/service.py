@@ -37,8 +37,8 @@ def _get_pg_conninfo() -> str:
     host = os.getenv("PG_HOST", "localhost")
     port = os.getenv("PG_PORT", "5432")
     dbname = os.getenv("PG_DB", "cdp_meta")
-    user = os.getenv("PG_USER", "cdp")
-    password = os.getenv("PG_PASSWORD", "cdp")
+    user = os.getenv("PG_USER", "postgres")
+    password = os.getenv("PG_PASSWORD", "Raghav_1174")
     return f"host={host} port={port} dbname={dbname} user={user} password={password}"
 
 
