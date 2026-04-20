@@ -50,6 +50,7 @@ class AttributeCondition(BaseModel):
     second_value: Any | None = None  # For "between" operators
     time_window: TimeWindow | None = None
     negate: bool = False
+    logical_operator: LogicalOperator | None = None
 
 
 class EventCondition(BaseModel):
@@ -62,6 +63,7 @@ class EventCondition(BaseModel):
     # Optional filters on the event properties
     event_property_filters: list[EventPropertyFilter] | None = None
     negate: bool = False
+    logical_operator: LogicalOperator | None = None
 
 
 class EventPropertyFilter(BaseModel):
@@ -76,6 +78,7 @@ class SegmentMembershipCondition(BaseModel):
     type: Literal["segment_membership"] = "segment_membership"
     segment_id: str
     operator: Literal["is_member", "is_not_member"] = "is_member"
+    logical_operator: LogicalOperator | None = None
 
 
 class CrossBrandCondition(BaseModel):
@@ -83,6 +86,7 @@ class CrossBrandCondition(BaseModel):
     type: Literal["cross_brand"] = "cross_brand"
     brand_code: str
     condition: AttributeCondition | EventCondition
+    logical_operator: LogicalOperator | None = None
 
 
 # Union of all condition types
@@ -100,6 +104,14 @@ class ConditionGroup(BaseModel):
     type: Literal["group"] = "group"
     logical_operator: LogicalOperator = LogicalOperator.AND
     conditions: list[ConditionType] = []
+    # To support groups within groups where the subgroup itself has a prefix operator
+    logical_operator_prefix: LogicalOperator | None = Field(default=None, alias="logical_operator_prefix")
+
+    def dict(self, *args, **kwargs):
+        d = super().dict(*args, **kwargs)
+        # Avoid conflict between `logical_operator` (internal to group) and `logical_operator` (prefix)
+        # So we use `logical_operator_prefix` here if we were to serialize, but for schemas we usually inject it in frontend.
+        return d
 
 
 # Rebuild model to handle forward references
