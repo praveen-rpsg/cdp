@@ -107,6 +107,9 @@ interface SegmentBuilderState {
 
   // Rule tree mutations
   addCondition: (groupId: string, condition?: Condition) => void;
+  quickAddCondition: (category: string) => void;
+  insertConditionAt: (groupId: string, index: number, condition?: Condition) => void;
+  reorderConditions: (groupId: string, fromIndex: number, toIndex: number) => void;
   addGroup: (parentGroupId: string, operator?: LogicalOperator) => void;
   removeCondition: (conditionId: string) => void;
   updateCondition: (conditionId: string, updates: Partial<Condition>) => void;
@@ -231,6 +234,35 @@ export const useSegmentStore = create<SegmentBuilderState>((set, get) => ({
     const group = findGroup(rules, groupId);
     if (group) {
       group.conditions.push(condition || createEmptyAttributeCondition());
+    }
+    set({ rules, isDirty: true, audienceCount: null });
+  },
+
+  quickAddCondition: (category) => {
+    const rules = structuredClone(get().rules);
+    const root = rules;
+    const condition: any = createEmptyAttributeCondition();
+    condition._initialCategory = category;
+    root.conditions.push(condition);
+    set({ rules, isDirty: true, audienceCount: null });
+  },
+
+  insertConditionAt: (groupId, index, condition) => {
+    const rules = structuredClone(get().rules);
+    const group = findGroup(rules, groupId);
+    if (group) {
+      const newCond = condition || createEmptyAttributeCondition();
+      group.conditions.splice(index, 0, newCond);
+    }
+    set({ rules, isDirty: true, audienceCount: null });
+  },
+
+  reorderConditions: (groupId, fromIndex, toIndex) => {
+    const rules = structuredClone(get().rules);
+    const group = findGroup(rules, groupId);
+    if (group && fromIndex !== toIndex) {
+      const [moved] = group.conditions.splice(fromIndex, 1);
+      group.conditions.splice(toIndex, 0, moved);
     }
     set({ rules, isDirty: true, audienceCount: null });
   },

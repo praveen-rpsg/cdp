@@ -12,9 +12,14 @@ import { CATEGORY_CONFIG, type AttributeDefinition } from "../../types/segment";
 interface Props {
   onSelect: (attr: AttributeDefinition) => void;
   onClose: () => void;
+  initialCategory?: string;
 }
 
-export const AttributePicker: React.FC<Props> = ({ onSelect, onClose }) => {
+export const AttributePicker: React.FC<Props> = ({
+  onSelect,
+  onClose,
+  initialCategory,
+}) => {
   const [search, setSearch] = useState("");
   const { attributeCatalog, selectedBrandCode } = useSegmentStore();
 
@@ -27,6 +32,12 @@ export const AttributePicker: React.FC<Props> = ({ onSelect, onClose }) => {
           a.applicable_brands.includes(selectedBrandCode)
       );
     }
+
+    // Apply initial category filter if search is empty
+    if (initialCategory && !search) {
+      attrs = attrs.filter((a) => a.category === initialCategory);
+    }
+
     if (search) {
       const q = search.toLowerCase();
       attrs = attrs.filter(
@@ -37,7 +48,7 @@ export const AttributePicker: React.FC<Props> = ({ onSelect, onClose }) => {
       );
     }
     return attrs;
-  }, [attributeCatalog, selectedBrandCode, search]);
+  }, [attributeCatalog, selectedBrandCode, search, initialCategory]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, AttributeDefinition[]>();

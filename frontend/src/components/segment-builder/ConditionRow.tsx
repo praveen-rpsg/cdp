@@ -5,7 +5,7 @@
  * Adapts the value input based on the attribute's data type.
  */
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useSegmentStore } from "../../store/segmentStore";
 import {
   OPERATOR_LABELS,
@@ -13,6 +13,7 @@ import {
   type AttributeDefinition,
 } from "../../types/segment";
 import { AttributePicker } from "./AttributePicker";
+import { MultiSelectDropdown } from "./MultiSelectDropdown";
 
 interface Props {
   condition: AttributeCondition;
@@ -20,6 +21,7 @@ interface Props {
 
 export const ConditionRow: React.FC<Props> = ({ condition }) => {
   const [showPicker, setShowPicker] = useState(false);
+  const [navCategory, setNavCategory] = useState<string | undefined>(undefined);
   const { attributeCatalog, updateCondition, removeCondition } =
     useSegmentStore();
 
@@ -28,13 +30,44 @@ export const ConditionRow: React.FC<Props> = ({ condition }) => {
     [attributeCatalog, condition.attribute_key]
   );
 
+  // Handle auto-open when coming from the sidebar categories panel
+  useEffect(() => {
+    if (condition._initialCategory) {
+      setNavCategory(condition._initialCategory);
+      setShowPicker(true);
+      // Strip the transient property so it doesn't re-open or persist
+      updateCondition(condition.id, { _initialCategory: undefined } as any);
+    }
+  }, [condition.id, condition._initialCategory, updateCondition]);
+
   const handleSelectAttribute = (attr: AttributeDefinition) => {
+    const prevAttr = selectedAttr;
+    const newOperators = attr.operators || [];
+
+    // Smart replacement: keep operator if still valid for the new attribute
+    const prevOperatorStillValid = newOperators.includes(condition.operator);
+
+    // Keep value only if same data type AND operator is still valid
+    const prevType = prevAttr?.data_type ?? "";
+    const newType = attr.data_type;
+    const sameType = prevType === newType;
+    const keepValue = prevOperatorStillValid && sameType;
+
     updateCondition(condition.id, {
       attribute_key: attr.key,
-      operator: attr.operators[0] || "equals",
-      value: "",
-      second_value: undefined,
-    });
+      operator: prevOperatorStillValid ? condition.operator : (newOperators[0] || "equals"),
+      value: keepValue ? condition.value : "",
+      second_value: keepValue ? condition.second_value : undefined,
+      _initialCategory: undefined,
+    } as any);
+  };
+  const handleMultiSelectChange = (newValues: string[]) => {
+    // Auto-upgrade operator based on current operator family
+    const isNegated = ["not_equals", "not_in_list"].includes(condition.operator);
+    const newOperator = isNegated
+      ? "not_in_list"
+      : "in_list";
+    updateCondition(condition.id, { value: newValues, operator: newOperator });
   };
 
   const availableOperators = selectedAttr?.operators || [];
@@ -73,6 +106,7 @@ export const ConditionRow: React.FC<Props> = ({ condition }) => {
         </button>
         {showPicker && (
           <AttributePicker
+            initialCategory={navCategory}
             onSelect={handleSelectAttribute}
             onClose={() => setShowPicker(false)}
           />
@@ -100,6 +134,7 @@ export const ConditionRow: React.FC<Props> = ({ condition }) => {
           condition={condition}
           attr={selectedAttr}
           onChange={(val) => updateCondition(condition.id, { value: val })}
+          onMultiSelectChange={handleMultiSelectChange}
         />
       )}
 
@@ -156,6 +191,7 @@ interface ValueInputProps {
   attr: AttributeDefinition | undefined;
   value?: any;
   onChange: (value: any) => void;
+  onMultiSelectChange?: (values: string[]) => void;
 }
 
 const ValueInput: React.FC<ValueInputProps> = ({
@@ -163,11 +199,37 @@ const ValueInput: React.FC<ValueInputProps> = ({
   attr,
   value,
   onChange,
+  onMultiSelectChange,
 }) => {
   const val = value ?? condition.value;
   const dataType = attr?.data_type || "string";
 
-  // Multi-value input for "in_list" / "not_in_list"
+  // Categorical attributes with known example values → MultiSelectDropdown
+  const isMultiSelectOperator = ["equals", "not_equals", "in_list", "not_in_list"].includes(condition.operator);
+  if (
+    attr?.example_values &&
+    attr.example_values.length > 0 &&
+    !Array.isArray(attr.example_values[0]) &&
+    (attr.data_type === "string" || !attr.data_type) &&
+    isMultiSelectOperator
+  ) {
+    const currentValues = Array.isArray(val)
+      ? val
+      : val && String(val).trim() !== ""
+      ? [String(val)]
+      : [];
+    const options = attr.example_values.map((ev: any) => String(ev));
+    return (
+      <MultiSelectDropdown
+        options={options}
+        values={currentValues}
+        onChange={onMultiSelectChange || onChange}
+        placeholder="Select values..."
+      />
+    );
+  }
+
+  // Legacy multi-value text input for "in_list" / "not_in_list" on non-enum attributes
   if (["in_list", "not_in_list", "contains_any", "contains_all"].includes(condition.operator)) {
     return (
       <input
@@ -239,29 +301,11 @@ const ValueInput: React.FC<ValueInputProps> = ({
     );
   }
 
-  // Enum / example values dropdown
-  if (attr?.example_values && attr.example_values.length > 0 && !Array.isArray(attr.example_values[0])) {
-    return (
-      <select
-        value={val}
-        onChange={(e) => onChange(e.target.value)}
-        className="px-2 py-1.5 text-sm border rounded-md min-w-[130px]"
-      >
-        <option value="">Select...</option>
-        {attr.example_values.map((ev: any) => (
-          <option key={String(ev)} value={ev}>
-            {String(ev).replace(/_/g, " ")}
-          </option>
-        ))}
-      </select>
-    );
-  }
-
   // Default: text input
   return (
     <input
       type="text"
-      value={val}
+      value={Array.isArray(val) ? val.join(", ") : val}
       onChange={(e) => onChange(e.target.value)}
       placeholder="Enter value..."
       className="px-2 py-1.5 text-sm border rounded-md flex-1 min-w-[150px]"
