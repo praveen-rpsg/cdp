@@ -131,6 +131,36 @@ SPENCERS_SCHEMA_MAP = {
     "consent.accepts_email_marketing": "ba.accepts_email_marketing",
     "consent.accepts_sms_marketing": "ba.accepts_sms_marketing",
     "consent.gw_customer_flag": "ba.gw_customer_flag",
+
+    # ── Bill Transaction (line-item level, compiled as EXISTS subqueries) ──
+    "bt.bill_date": "bt.bill_date",
+    "bt.store_code": "bt.store_code",
+    "bt.store_desc": "bt.store_desc",
+    "bt.store_format": "bt.store_format",
+    "bt.region": "bt.region",
+    "bt.region_desc": "bt.region_desc",
+    "bt.city": "bt.city",
+    "bt.city_desc": "bt.city_desc",
+    "bt.article": "bt.article",
+    "bt.article_desc": "bt.article_desc",
+    "bt.segment_desc": "bt.segment_desc",
+    "bt.family_desc": "bt.family_desc",
+    "bt.class_desc": "bt.class_desc",
+    "bt.brick_desc": "bt.brick_desc",
+    "bt.brand_name": "bt.brand_name",
+    "bt.manufacturer_name": "bt.manufacturer_name",
+    "bt.gross_sale_value": "bt.gross_sale_value",
+    "bt.total_discount": "bt.total_discount",
+    "bt.total_mrp_value": "bt.total_mrp_value",
+    "bt.billed_qty": "bt.billed_qty",
+    "bt.billed_mrp": "bt.billed_mrp",
+    "bt.delivery_channel": "bt.delivery_channel",
+    "bt.sales_return": "bt.sales_return",
+    "bt.weekend_flag": "bt.weekend_flag",
+    "bt.wednesday_flag": "bt.wednesday_flag",
+    "bt.promo_indicator": "bt.promo_indicator",
+    "bt.day_of_week": "bt.day_of_week",
+    "bt.mobile_number": "bt.mobile_number",
 }
 
 
@@ -180,6 +210,37 @@ class PgCompiler:
         """Compile a COUNT query for audience size estimation."""
         inner = self.compile(definition)
         return f"SELECT COUNT(*) AS audience_count FROM (\n{inner}\n) segment_results"
+
+    def compile_summary(self, definition: SegmentDefinition, metrics: list[str]) -> str:
+        """
+        Compile a summary aggregation query for a segment.
+        Calculates SUM, AVG, and derived metrics like spend_per_visit.
+        """
+        self._reset()
+        where_clause = self._compile_group(definition.root)
+        
+        # Ensure ba table is joined
+        self._needs_ba = True
+        
+        # Map requested metrics to SQL aggregations
+        agg_map = {
+            "total_bills": "SUM(COALESCE(ba.total_bills, 0))",
+            "total_spend": "SUM(COALESCE(ba.total_spend, 0))",
+            "total_visits": "SUM(COALESCE(ba.total_visits, 0))",
+            "avg_spend": "AVG(COALESCE(ba.total_spend, 0))",
+            "avg_bills": "AVG(COALESCE(ba.total_bills, 0))",
+            "avg_visits": "AVG(COALESCE(ba.total_visits, 0))",
+            "spend_per_bill": "CASE WHEN SUM(COALESCE(ba.total_bills, 0)) > 0 THEN SUM(COALESCE(ba.total_spend, 0)) / SUM(COALESCE(ba.total_bills, 0)) ELSE 0 END",
+            "spend_per_visit": "CASE WHEN SUM(COALESCE(ba.total_visits, 0)) > 0 THEN SUM(COALESCE(ba.total_spend, 0)) / SUM(COALESCE(ba.total_visits, 0)) ELSE 0 END",
+        }
+        
+        select_parts = ["COUNT(*) AS audience_size"]
+        for m in metrics:
+            if m in agg_map:
+                select_parts.append(f"{agg_map[m]} AS {m}")
+        
+        select_clause = ",\n  ".join(select_parts)
+        return self._build_query(where_clause, definition, select=select_clause)
 
     def compile_preview(self, definition: SegmentDefinition, limit: int = 100) -> str:
         """Compile a preview query returning sample profiles."""
@@ -264,16 +325,30 @@ class PgCompiler:
 
     def _compile_group(self, group: ConditionGroup) -> str:
         parts = []
-        for condition in group.conditions:
+        sql = ""
+        for i, condition in enumerate(group.conditions):
             compiled = self._compile_condition(condition)
-            if compiled:
-                parts.append(compiled)
+            if not compiled:
+                continue
 
-        if not parts:
+            if i == 0:
+                sql = f"({compiled})"
+            else:
+                op = getattr(condition, "logical_operator", None)
+                if isinstance(condition, ConditionGroup):
+                    op = getattr(condition, "logical_operator_prefix", None)
+                if op is None:
+                    op = group.logical_operator
+                
+                # Default is string or Enum, so check
+                op_val = op.value.upper() if hasattr(op, "value") else str(op).upper()
+                joiner = f" {op_val} "
+                # Wrap sequentially to enforce strict left-to-right evaluation
+                sql = f"({sql}{joiner}({compiled}))"
+
+        if not sql:
             return "1=1"
-
-        joiner = f" {group.logical_operator.value.upper()} "
-        return joiner.join(f"({p})" for p in parts)
+        return sql
 
     def _compile_condition(self, condition: ConditionType) -> str:
         if isinstance(condition, ConditionGroup):
@@ -290,11 +365,45 @@ class PgCompiler:
             raise ValueError(f"Unknown condition type: {type(condition)}")
 
     def _compile_attribute(self, cond: AttributeCondition) -> str:
+        # BT (bill transaction) attributes use EXISTS subqueries against line-item data
+        if cond.attribute_key.startswith("bt."):
+            return self._compile_bt_attribute(cond)
         col = self._resolve_column(cond.attribute_key)
         sql = self._operator_to_sql(col, cond.operator, cond.value, cond.second_value)
         if cond.negate:
             sql = f"NOT ({sql})"
         return sql
+
+    def _compile_bt_attribute(self, cond: AttributeCondition) -> str:
+        """
+        Compile a Bill Transaction attribute condition as an EXISTS subquery.
+
+        BT attributes are line-item level (one row per article per bill).
+        We compile them as EXISTS subqueries against silver.s_fact_bill_transactions
+        joined back to the main query via mobile_number = canonical_mobile.
+
+        This avoids fan-out (the main query still returns 1 row per customer)
+        while enabling filtering on any line-item attribute.
+        """
+        col_name = cond.attribute_key.split(".", 1)[1]  # e.g., "brand_name"
+        col = f"bt.{col_name}"
+        inner_condition = self._operator_to_sql(col, cond.operator, cond.value, cond.second_value)
+
+        if cond.negate:
+            return (
+                f"NOT EXISTS (\n"
+                f"  SELECT 1 FROM silver.s_fact_bill_transactions bt\n"
+                f"  WHERE bt.mobile_number = p.canonical_mobile\n"
+                f"    AND {inner_condition}\n"
+                f")"
+            )
+        return (
+            f"EXISTS (\n"
+            f"  SELECT 1 FROM silver.s_fact_bill_transactions bt\n"
+            f"  WHERE bt.mobile_number = p.canonical_mobile\n"
+            f"    AND {inner_condition}\n"
+            f")"
+        )
 
     def _compile_event(self, cond: EventCondition) -> str:
         """Events from purchase/feedback treated as attribute conditions on ba table."""
@@ -390,11 +499,11 @@ class PgCompiler:
 
     def _operator_to_sql(self, column: str, operator: str, value: Any, second_value: Any) -> str:
         match operator:
-            # String
+            # String (equals/not_equals are case-insensitive via ILIKE for robustness)
             case "equals":
-                return f"{column} = {self._quote(value)}"
+                return f"{column} ILIKE {self._quote(value)}"
             case "not_equals":
-                return f"{column} != {self._quote(value)}"
+                return f"{column} NOT ILIKE {self._quote(value)}"
             case "contains":
                 return f"{column} ILIKE {self._quote(f'%{value}%')}"
             case "not_contains":

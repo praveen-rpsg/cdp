@@ -22,6 +22,7 @@ import {
 } from "../../types/segment";
 import type { SetOperationType } from "../../types/segment";
 import { ConditionGroupUI } from "./ConditionGroupUI";
+import AudienceSummaryPanel from "./AudienceSummaryPanel";
 
 export const SegmentBuilder: React.FC = () => {
   const {
@@ -55,12 +56,18 @@ export const SegmentBuilder: React.FC = () => {
     updateSplitEntry,
     setSetOperation,
     setSetOperationCounts,
+    addCondition,
+    quickAddCondition,
+    updateCondition,
     resetRules,
     loadRules,
     getSegmentDefinition,
+    estimateAudience,
+    fetchSummary,
   } = useSegmentStore();
 
   const [showSQL, setShowSQL] = useState(false);
+  const [copiedSQL, setCopiedSQL] = useState(false);
   const [activeTab, setActiveTab] = useState<"builder" | "json">("builder");
   const [templates, setTemplates] = useState<any[]>([]);
   const [templateFilter, setTemplateFilter] = useState<string>("all");
@@ -100,39 +107,7 @@ export const SegmentBuilder: React.FC = () => {
   };
 
   const handleEstimate = async () => {
-    if (!selectedBrandCode) return;
-    setIsEstimating(true);
-    try {
-      const response = await fetch("/api/v1/segments/estimate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          brand_code: selectedBrandCode,
-          rules: getSegmentDefinition(),
-        }),
-      });
-      const data = await response.json();
-      setAudienceCount(data.estimated_count);
-      setCompiledSQL(data.sql);
-
-      // Process set operation counts
-      if (data.set_operation_counts) {
-        setSetOperationCounts(data.set_operation_counts);
-      } else {
-        setSetOperationCounts(null);
-      }
-
-      // Process split counts
-      if (data.split_counts) {
-        setSplitCounts(data.split_counts);
-      } else {
-        setSplitCounts([]);
-      }
-    } catch (err) {
-      console.error("Estimate failed:", err);
-    } finally {
-      setIsEstimating(false);
-    }
+    await estimateAudience();
   };
 
   const handleSave = async () => {
@@ -656,9 +631,37 @@ export const SegmentBuilder: React.FC = () => {
                 </svg>
               </button>
               {showSQL && (
-                <pre className="p-4 bg-gray-900 text-green-400 text-xs font-mono overflow-x-auto border-t">
-                  {compiledSQL}
-                </pre>
+                <div className="relative group">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigator.clipboard.writeText(compiledSQL);
+                      setCopiedSQL(true);
+                      setTimeout(() => setCopiedSQL(false), 2000);
+                    }}
+                    className="absolute top-2 right-2 p-1.5 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white rounded border border-gray-700 opacity-0 group-hover:opacity-100 transition-all flex items-center gap-1"
+                    title="Copy SQL"
+                  >
+                    {copiedSQL ? (
+                      <>
+                        <svg className="w-3.5 h-3.5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        <span className="text-[10px] text-green-400 font-medium">Copied</span>
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                        <span className="text-[10px] font-medium">Copy</span>
+                      </>
+                    )}
+                  </button>
+                  <pre className="p-4 bg-gray-900 text-green-400 text-xs font-mono overflow-x-auto border-t min-h-[60px]">
+                    {compiledSQL}
+                  </pre>
+                </div>
               )}
             </div>
           )}
@@ -779,6 +782,8 @@ export const SegmentBuilder: React.FC = () => {
             )}
           </div>
 
+          <AudienceSummaryPanel />
+
           {/* Attribute categories reference */}
           <div className="bg-white rounded-lg border border-gray-200 p-4">
             <h3 className="text-sm font-semibold text-gray-700 mb-3">
@@ -788,13 +793,17 @@ export const SegmentBuilder: React.FC = () => {
               {Object.entries(CATEGORY_CONFIG).map(([key, config]) => (
                 <div
                   key={key}
-                  className="flex items-center gap-2 text-xs text-gray-600"
+                  onClick={() => quickAddCondition(key)}
+                  className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer hover:bg-indigo-50 hover:text-indigo-700 px-2 py-1 -mx-2 rounded transition-colors group"
                 >
                   <div
-                    className="w-2 h-2 rounded-full"
+                    className="w-2 h-2 rounded-full transition-transform group-hover:scale-125"
                     style={{ backgroundColor: config.color }}
                   />
-                  <span>{config.label}</span>
+                  <span className="flex-1">{config.label}</span>
+                  <svg className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
                 </div>
               ))}
             </div>

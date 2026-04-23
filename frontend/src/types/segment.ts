@@ -89,6 +89,8 @@ export interface AttributeCondition {
   second_value?: any;
   time_window?: TimeWindow;
   negate: boolean;
+  _initialCategory?: string;
+  logical_operator?: LogicalOperator;
 }
 
 export interface EventCondition {
@@ -100,6 +102,7 @@ export interface EventCondition {
   time_window: TimeWindow;
   event_property_filters?: EventPropertyFilter[];
   negate: boolean;
+  logical_operator?: LogicalOperator;
 }
 
 export interface EventPropertyFilter {
@@ -113,6 +116,7 @@ export interface SegmentMembershipCondition {
   id: string;
   segment_id: string;
   operator: "is_member" | "is_not_member";
+  logical_operator?: LogicalOperator;
 }
 
 export interface CrossBrandCondition {
@@ -120,6 +124,7 @@ export interface CrossBrandCondition {
   id: string;
   brand_code: string;
   condition: AttributeCondition | EventCondition;
+  logical_operator?: LogicalOperator;
 }
 
 export type Condition =
@@ -133,6 +138,7 @@ export interface ConditionGroup {
   type: "group";
   id: string;
   logical_operator: LogicalOperator;
+  logical_operator_prefix?: LogicalOperator;
   conditions: Condition[];
 }
 

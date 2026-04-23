@@ -68,6 +68,9 @@ interface SegmentBuilderState {
   // Audience estimation
   audienceCount: number | null;
   isEstimating: boolean;
+  summaryMetrics: Record<string, number> | null;
+  isFetchingSummary: boolean;
+  isFetchingCatalog: boolean;
   compiledSQL: string | null;
 
   // Rank & Split
@@ -91,6 +94,9 @@ interface SegmentBuilderState {
   setAttributeCatalog: (attrs: AttributeDefinition[]) => void;
   setAudienceCount: (count: number | null) => void;
   setIsEstimating: (v: boolean) => void;
+  setSummaryMetrics: (metrics: Record<string, number> | null) => void;
+  setIsFetchingSummary: (v: boolean) => void;
+  setIsFetchingCatalog: (v: boolean) => void;
   setCompiledSQL: (sql: string | null) => void;
 
   // Actions - Rank & Split
@@ -107,6 +113,9 @@ interface SegmentBuilderState {
 
   // Rule tree mutations
   addCondition: (groupId: string, condition?: Condition) => void;
+  quickAddCondition: (category: string) => void;
+  insertConditionAt: (groupId: string, index: number, condition?: Condition) => void;
+  reorderConditions: (groupId: string, fromIndex: number, toIndex: number) => void;
   addGroup: (parentGroupId: string, operator?: LogicalOperator) => void;
   removeCondition: (conditionId: string) => void;
   updateCondition: (conditionId: string, updates: Partial<Condition>) => void;
@@ -116,6 +125,11 @@ interface SegmentBuilderState {
 
   // Export
   getSegmentDefinition: () => SegmentDefinition;
+  
+  // Async actions
+  estimateAudience: () => Promise<void>;
+  fetchSummary: () => Promise<void>;
+  fetchCatalog: () => Promise<void>;
 }
 
 function findAndMutate(
@@ -161,6 +175,9 @@ export const useSegmentStore = create<SegmentBuilderState>((set, get) => ({
   catalogLoaded: false,
   audienceCount: null,
   isEstimating: false,
+  summaryMetrics: null,
+  isFetchingSummary: false,
+  isFetchingCatalog: false,
   compiledSQL: null,
   isDirty: false,
 
@@ -176,11 +193,20 @@ export const useSegmentStore = create<SegmentBuilderState>((set, get) => ({
   setSegmentName: (name) => set({ segmentName: name, isDirty: true }),
   setSegmentDescription: (desc) => set({ segmentDescription: desc, isDirty: true }),
   setSegmentType: (type) => set({ segmentType: type, isDirty: true }),
-  setSelectedBrand: (code) => set({ selectedBrandCode: code, audienceCount: null }),
+  setSelectedBrand: (code) => {
+    set({ selectedBrandCode: code, audienceCount: null });
+    // If we haven't loaded the catalog, fetch it
+    if (!get().catalogLoaded && !get().isFetchingCatalog) {
+      get().fetchCatalog();
+    }
+  },
   setBrands: (brands) => set({ brands }),
   setAttributeCatalog: (attrs) => set({ attributeCatalog: attrs, catalogLoaded: true }),
   setAudienceCount: (count) => set({ audienceCount: count }),
   setIsEstimating: (v) => set({ isEstimating: v }),
+  setSummaryMetrics: (metrics) => set({ summaryMetrics: metrics }),
+  setIsFetchingSummary: (v) => set({ isFetchingSummary: v }),
+  setIsFetchingCatalog: (v) => set({ isFetchingCatalog: v }),
   setCompiledSQL: (sql) => set({ compiledSQL: sql }),
 
   // Rank
@@ -235,6 +261,35 @@ export const useSegmentStore = create<SegmentBuilderState>((set, get) => ({
     set({ rules, isDirty: true, audienceCount: null });
   },
 
+  quickAddCondition: (category) => {
+    const rules = structuredClone(get().rules);
+    const root = rules;
+    const condition: any = createEmptyAttributeCondition();
+    condition._initialCategory = category;
+    root.conditions.push(condition);
+    set({ rules, isDirty: true, audienceCount: null });
+  },
+
+  insertConditionAt: (groupId, index, condition) => {
+    const rules = structuredClone(get().rules);
+    const group = findGroup(rules, groupId);
+    if (group) {
+      const newCond = condition || createEmptyAttributeCondition();
+      group.conditions.splice(index, 0, newCond);
+    }
+    set({ rules, isDirty: true, audienceCount: null });
+  },
+
+  reorderConditions: (groupId, fromIndex, toIndex) => {
+    const rules = structuredClone(get().rules);
+    const group = findGroup(rules, groupId);
+    if (group && fromIndex !== toIndex) {
+      const [moved] = group.conditions.splice(fromIndex, 1);
+      group.conditions.splice(toIndex, 0, moved);
+    }
+    set({ rules, isDirty: true, audienceCount: null });
+  },
+
   addGroup: (parentGroupId, operator = "and") => {
     const rules = structuredClone(get().rules);
     const parent = findGroup(rules, parentGroupId);
@@ -280,6 +335,8 @@ export const useSegmentStore = create<SegmentBuilderState>((set, get) => ({
       splitCounts: [],
       setOperation: { enabled: false, operation: "union", segments: [] },
       setOperationCounts: null,
+      summaryMetrics: null,
+      isFetchingSummary: false,
     }),
 
   loadRules: (rules) => set({ rules, isDirty: false }),
@@ -315,5 +372,83 @@ export const useSegmentStore = create<SegmentBuilderState>((set, get) => ({
     }
 
     return def;
+  },
+
+  estimateAudience: async () => {
+    const { selectedBrandCode, isEstimating, getSegmentDefinition } = get();
+    if (!selectedBrandCode || isEstimating) return;
+
+    set({ isEstimating: true, audienceCount: null });
+
+    try {
+      const response = await fetch("/api/v1/segments/estimate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          brand_code: selectedBrandCode,
+          rules: getSegmentDefinition(),
+        }),
+      });
+      const data = await response.json();
+      set({
+        audienceCount: data.estimated_count,
+        compiledSQL: data.sql,
+        splitCounts: data.split_counts || [],
+        setOperationCounts: data.set_operation_counts || null,
+        isEstimating: false,
+      });
+
+      // Also trigger summary fetch
+      get().fetchSummary();
+    } catch (err) {
+      console.error("Failed to estimate audience:", err);
+      set({ isEstimating: false });
+    }
+  },
+
+  fetchSummary: async () => {
+    const { selectedBrandCode, isFetchingSummary, getSegmentDefinition } = get();
+    if (!selectedBrandCode || isFetchingSummary) return;
+
+    set({ isFetchingSummary: true, summaryMetrics: null });
+
+    try {
+      const response = await fetch("/api/v1/segments/summary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          brand_code: selectedBrandCode,
+          rules: getSegmentDefinition(),
+        }),
+      });
+      const data = await response.json();
+      set({
+        summaryMetrics: data.metrics,
+        isFetchingSummary: false,
+      });
+    } catch (err) {
+      console.error("Failed to fetch summary:", err);
+      set({ isFetchingSummary: false });
+    }
+  },
+  fetchCatalog: async () => {
+    const { isFetchingCatalog } = get();
+    if (isFetchingCatalog) return;
+
+    set({ isFetchingCatalog: true });
+
+    try {
+      const response = await fetch("/api/v1/segments/attributes/catalog");
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      const data = await response.json();
+      set({
+        attributeCatalog: data.attributes || [],
+        catalogLoaded: true,
+        isFetchingCatalog: false,
+      });
+    } catch (err) {
+      console.error("Failed to fetch attribute catalog:", err);
+      set({ isFetchingCatalog: false, catalogLoaded: false });
+    }
   },
 }));

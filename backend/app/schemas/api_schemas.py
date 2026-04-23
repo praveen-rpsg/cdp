@@ -82,6 +82,21 @@ class AudienceEstimateResponse(BaseModel):
     split_counts: list[dict] | None = None
 
 
+class AudienceSummaryRequest(BaseModel):
+    brand_code: str
+    rules: dict
+    metrics: list[str] = ["total_spend", "avg_spend", "total_bills", "avg_visits", "spend_per_bill", "spend_per_visit"]
+    datalake_config: dict | None = None
+
+
+class AudienceSummaryResponse(BaseModel):
+    brand_code: str
+    audience_size: int
+    metrics: dict[str, float | int | None]
+    sql: str
+    status: str
+
+
 class AudiencePreviewRequest(BaseModel):
     brand_code: str
     rules: dict

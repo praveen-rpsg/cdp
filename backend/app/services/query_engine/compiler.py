@@ -173,17 +173,28 @@ class AthenaCompiler:
     def _compile_group(self, group: ConditionGroup) -> str:
         """Compile a condition group into a WHERE clause fragment."""
         parts = []
-        for condition in group.conditions:
+        sql = ""
+        for i, condition in enumerate(group.conditions):
             compiled = self._compile_condition(condition)
-            if compiled:
-                parts.append(compiled)
+            if not compiled:
+                continue
 
-        if not parts:
+            if i == 0:
+                sql = f"({compiled})"
+            else:
+                op = getattr(condition, "logical_operator", None)
+                if isinstance(condition, ConditionGroup):
+                    op = getattr(condition, "logical_operator_prefix", None)
+                if op is None:
+                    op = group.logical_operator
+                
+                op_val = op.value.upper() if hasattr(op, "value") else str(op).upper()
+                joiner = f" {op_val} "
+                sql = f"({sql}{joiner}({compiled}))"
+
+        if not sql:
             return "1=1"
-
-        joiner = f" {group.logical_operator.value.upper()} "
-        result = joiner.join(f"({p})" for p in parts)
-        return result
+        return sql
 
     def _compile_condition(self, condition: ConditionType) -> str:
         """Dispatch to the right compiler based on condition type."""

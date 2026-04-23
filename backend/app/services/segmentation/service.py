@@ -265,6 +265,56 @@ class SegmentationService:
 
         return result
 
+    async def get_segment_summary(self, brand_code: str, rules: dict, metrics: list[str] | None = None) -> dict:
+        """Calculate behavioral summary metrics for a segment."""
+        if metrics is None:
+            metrics = ["total_spend", "avg_spend", "total_bills", "avg_visits", "spend_per_bill", "spend_per_visit"]
+            
+        definition = SegmentDefinition.model_validate(rules)
+        compiler = PgCompiler(brand_code=brand_code)
+        summary_sql = compiler.compile_summary(definition, metrics)
+        
+        try:
+            results = self._execute_pg(summary_sql)
+            if not results:
+                return {
+                    "brand_code": brand_code,
+                    "audience_size": 0,
+                    "metrics": {m: 0 for m in metrics},
+                    "sql": summary_sql,
+                    "status": "completed",
+                }
+            
+            row = results[0]
+            audience_size = row.pop("audience_size", 0)
+            
+            # Convert decimal results to floats for JSON serialization
+            formatted_metrics = {}
+            for k, v in row.items():
+                if v is None:
+                    formatted_metrics[k] = 0
+                elif hasattr(v, "__float__"):
+                    formatted_metrics[k] = float(v)
+                else:
+                    formatted_metrics[k] = v
+                    
+            return {
+                "brand_code": brand_code,
+                "audience_size": audience_size,
+                "metrics": formatted_metrics,
+                "sql": summary_sql,
+                "status": "completed",
+            }
+        except Exception as e:
+            logger.error(f"Failed to calculate segment summary: {e}")
+            return {
+                "brand_code": brand_code,
+                "audience_size": 0,
+                "metrics": {m: None for m in metrics},
+                "sql": summary_sql,
+                "status": f"failed: {str(e)}",
+            }
+
     async def preview_audience(self, brand_code: str, rules: dict, limit: int = 100, datalake_config: dict | None = None) -> dict:
         """Get a preview of matching profiles from Spencer's DWH."""
         preview_sql = self.compile_preview_query(brand_code, rules, limit, datalake_config)
