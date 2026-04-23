@@ -5,19 +5,18 @@ services:
     container_name: cdp_postgres
     restart: always
     env_file: .env.prod
-    environment:
-      POSTGRES_USER: ${PG_USER}
-      POSTGRES_PASSWORD: ${PG_PASSWORD}
-      POSTGRES_DB: ${PG_DB}
+    entrypoint: ["/bin/sh", "/opt/cdp/postgres-prod-entrypoint.sh"]
+    command: ["postgres"]
     ports:
       - "127.0.0.1:5435:5432"       # internal only — no public exposure
     volumes:
       - cdp_pgdata:/var/lib/postgresql/data
       - ./dwh/sql:/docker-entrypoint-initdb.d
+      - ./infra/postgres-prod-entrypoint.sh:/opt/cdp/postgres-prod-entrypoint.sh:ro
     networks:
       - cdp_network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${PG_USER}"]
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 5s
       timeout: 5s
       retries: 10

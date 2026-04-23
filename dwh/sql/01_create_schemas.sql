@@ -13,9 +13,12 @@ CREATE SCHEMA IF NOT EXISTS silver;
 
 -- Silver-Identity layer: identity resolution, identity graphs
 CREATE SCHEMA IF NOT EXISTS silver_identity;
+CREATE SCHEMA IF NOT EXISTS identity;
 
 -- Silver-Gold layer: aggregated business views, NOB, sales summaries
 CREATE SCHEMA IF NOT EXISTS silver_gold;
+CREATE SCHEMA IF NOT EXISTS gold;
 
 -- Reverse ETL layer: derived attributes, audience syncs
 CREATE SCHEMA IF NOT EXISTS silver_reverse_etl;
+CREATE SCHEMA IF NOT EXISTS reverse_etl;
