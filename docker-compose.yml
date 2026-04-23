@@ -2,12 +2,37 @@ version: "3.9"
 
 services:
   # -------------------------------------------------------------------------
+  # PostgreSQL — CDP metadata store (segments, brands, users)
+  # -------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: cdp
+      POSTGRES_PASSWORD: cdp
+      POSTGRES_DB: cdp_meta
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./dwh/sql:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cdp"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # -------------------------------------------------------------------------
   # Redis — caching (audience counts, session, rate limiting)
   # -------------------------------------------------------------------------
   redis:
     image: redis:7-alpine
-    # ports:
-    #   - "6379:6379"
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   # -------------------------------------------------------------------------
   # Backend — FastAPI CDP Platform
@@ -19,21 +44,24 @@ services:
     ports:
       - "8000:8000"
     environment:
-      CDP_DATABASE_URL: postgresql+asyncpg://postgres:Raghav_1174@host.docker.internal:5432/cdp_meta
+      CDP_DATABASE_URL: postgresql+asyncpg://cdp:cdp@postgres:5432/cdp_meta
       CDP_REDIS_URL: redis://redis:6379/0
       CDP_DEBUG: "true"
       CDP_AWS_REGION: ap-south-1
       # Spencer's DWH connection (same PG instance, used by PgCompiler)
-      PG_HOST: host.docker.internal
+      PG_HOST: postgres
       PG_PORT: "5432"
       PG_DB: cdp_meta
-      PG_USER: postgres
-      PG_PASSWORD: Raghav_1174
+      PG_USER: cdp
+      PG_PASSWORD: cdp
       # AWS credentials injected via env or IAM role
       # CDP_AWS_ACCESS_KEY_ID: ...
       # CDP_AWS_SECRET_ACCESS_KEY: ...
     depends_on:
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     volumes:
       - ./backend:/app
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
@@ -64,15 +92,18 @@ services:
       context: ./dwh/dbt_spencers
       dockerfile: Dockerfile
     environment:
-      PG_HOST: host.docker.internal
+      PG_HOST: postgres
       PG_PORT: "5432"
-      PG_USER: postgres
-      PG_PASSWORD: Raghav_1174
+      PG_USER: cdp
+      PG_PASSWORD: cdp
       PG_DB: cdp_meta
-    depends_on: []
+    depends_on:
+      postgres:
+        condition: service_healthy
     volumes:
       - ./dwh/dbt_spencers:/dbt
     profiles:
       - dbt
 
-volumes: {}
+volumes:
+  pgdata:
