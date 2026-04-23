@@ -12,20 +12,14 @@ const MOCK_BRANDS: Brand[] = [
 ];
 
 function App() {
-  const { setBrands, setAttributeCatalog, catalogLoaded } = useSegmentStore();
+  const { setBrands, fetchCatalog, catalogLoaded } = useSegmentStore();
 
   useEffect(() => {
     setBrands(MOCK_BRANDS);
 
-    // Load attribute catalog from API
+    // Initial load of attribute catalog
     if (!catalogLoaded) {
-      fetch("/api/v1/segments/attributes/catalog")
-        .then((r) => r.json())
-        .then((data) => setAttributeCatalog(data.attributes))
-        .catch(() => {
-          // Fallback: use empty catalog if API not available
-          console.warn("API not available, using empty catalog");
-        });
+      fetchCatalog();
     }
   }, []);
 

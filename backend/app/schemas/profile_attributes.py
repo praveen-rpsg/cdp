@@ -141,7 +141,6 @@ ATTRIBUTE_CATALOG: list[AttributeDefinition] = [
         description="Unified customer identifier (unified_id) from identity resolution",
         operators=STRING_OPS,
         example_values=["UID-000123", "UID-004567"],
-        applicable_brands=["spencers"],
         source_table="unified_profiles",
     ),
     AttributeDefinition(
@@ -152,7 +151,6 @@ ATTRIBUTE_CATALOG: list[AttributeDefinition] = [
         description="Customer email address from unified profile",
         operators=STRING_OPS,
         example_values=["customer@example.com"],
-        applicable_brands=["spencers"],
         source_table="unified_profiles",
     ),
     AttributeDefinition(
@@ -163,7 +161,6 @@ ATTRIBUTE_CATALOG: list[AttributeDefinition] = [
         description="Canonical mobile number used as the primary contact identifier",
         operators=STRING_OPS,
         example_values=["9876543210", "8012345678"],
-        applicable_brands=["spencers"],
         source_table="unified_profiles",
     ),
     AttributeDefinition(
@@ -222,7 +219,6 @@ ATTRIBUTE_CATALOG: list[AttributeDefinition] = [
         description="Customer display name from unified profile",
         operators=STRING_OPS,
         example_values=["Rajesh Kumar", "Priya Sharma"],
-        applicable_brands=["spencers"],
         source_table="unified_profiles",
     ),
     AttributeDefinition(
@@ -266,7 +262,6 @@ ATTRIBUTE_CATALOG: list[AttributeDefinition] = [
         description="Customer age in years",
         operators=NUMERIC_OPS,
         example_values=[25, 35, 50, 65],
-        applicable_brands=["spencers"],
         unit="years",
         source_table="customer_behavioral_attributes",
     ),
@@ -326,7 +321,6 @@ ATTRIBUTE_CATALOG: list[AttributeDefinition] = [
         description="Customer postal pincode",
         operators=STRING_OPS,
         example_values=["560001", "400001", "110001"],
-        applicable_brands=["spencers"],
         source_table="unified_profiles",
     ),
     AttributeDefinition(
@@ -337,7 +331,6 @@ ATTRIBUTE_CATALOG: list[AttributeDefinition] = [
         description="Customer city from the unified profile",
         operators=STRING_OPS,
         example_values=["Bengaluru", "Mumbai", "Kolkata", "Hyderabad"],
-        applicable_brands=["spencers"],
         source_table="unified_profiles",
     ),
     AttributeDefinition(

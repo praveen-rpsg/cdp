@@ -22,6 +22,7 @@ import {
 } from "../../types/segment";
 import type { SetOperationType } from "../../types/segment";
 import { ConditionGroupUI } from "./ConditionGroupUI";
+import AudienceSummaryPanel from "./AudienceSummaryPanel";
 
 export const SegmentBuilder: React.FC = () => {
   const {
@@ -61,6 +62,8 @@ export const SegmentBuilder: React.FC = () => {
     resetRules,
     loadRules,
     getSegmentDefinition,
+    estimateAudience,
+    fetchSummary,
   } = useSegmentStore();
 
   const [showSQL, setShowSQL] = useState(false);
@@ -104,39 +107,7 @@ export const SegmentBuilder: React.FC = () => {
   };
 
   const handleEstimate = async () => {
-    if (!selectedBrandCode) return;
-    setIsEstimating(true);
-    try {
-      const response = await fetch("/api/v1/segments/estimate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          brand_code: selectedBrandCode,
-          rules: getSegmentDefinition(),
-        }),
-      });
-      const data = await response.json();
-      setAudienceCount(data.estimated_count);
-      setCompiledSQL(data.sql);
-
-      // Process set operation counts
-      if (data.set_operation_counts) {
-        setSetOperationCounts(data.set_operation_counts);
-      } else {
-        setSetOperationCounts(null);
-      }
-
-      // Process split counts
-      if (data.split_counts) {
-        setSplitCounts(data.split_counts);
-      } else {
-        setSplitCounts([]);
-      }
-    } catch (err) {
-      console.error("Estimate failed:", err);
-    } finally {
-      setIsEstimating(false);
-    }
+    await estimateAudience();
   };
 
   const handleSave = async () => {
@@ -810,6 +781,8 @@ export const SegmentBuilder: React.FC = () => {
               </div>
             )}
           </div>
+
+          <AudienceSummaryPanel />
 
           {/* Attribute categories reference */}
           <div className="bg-white rounded-lg border border-gray-200 p-4">

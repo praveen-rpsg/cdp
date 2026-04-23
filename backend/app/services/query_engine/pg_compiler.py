@@ -211,6 +211,37 @@ class PgCompiler:
         inner = self.compile(definition)
         return f"SELECT COUNT(*) AS audience_count FROM (\n{inner}\n) segment_results"
 
+    def compile_summary(self, definition: SegmentDefinition, metrics: list[str]) -> str:
+        """
+        Compile a summary aggregation query for a segment.
+        Calculates SUM, AVG, and derived metrics like spend_per_visit.
+        """
+        self._reset()
+        where_clause = self._compile_group(definition.root)
+        
+        # Ensure ba table is joined
+        self._needs_ba = True
+        
+        # Map requested metrics to SQL aggregations
+        agg_map = {
+            "total_bills": "SUM(COALESCE(ba.total_bills, 0))",
+            "total_spend": "SUM(COALESCE(ba.total_spend, 0))",
+            "total_visits": "SUM(COALESCE(ba.total_visits, 0))",
+            "avg_spend": "AVG(COALESCE(ba.total_spend, 0))",
+            "avg_bills": "AVG(COALESCE(ba.total_bills, 0))",
+            "avg_visits": "AVG(COALESCE(ba.total_visits, 0))",
+            "spend_per_bill": "CASE WHEN SUM(COALESCE(ba.total_bills, 0)) > 0 THEN SUM(COALESCE(ba.total_spend, 0)) / SUM(COALESCE(ba.total_bills, 0)) ELSE 0 END",
+            "spend_per_visit": "CASE WHEN SUM(COALESCE(ba.total_visits, 0)) > 0 THEN SUM(COALESCE(ba.total_spend, 0)) / SUM(COALESCE(ba.total_visits, 0)) ELSE 0 END",
+        }
+        
+        select_parts = ["COUNT(*) AS audience_size"]
+        for m in metrics:
+            if m in agg_map:
+                select_parts.append(f"{agg_map[m]} AS {m}")
+        
+        select_clause = ",\n  ".join(select_parts)
+        return self._build_query(where_clause, definition, select=select_clause)
+
     def compile_preview(self, definition: SegmentDefinition, limit: int = 100) -> str:
         """Compile a preview query returning sample profiles."""
         self._reset()

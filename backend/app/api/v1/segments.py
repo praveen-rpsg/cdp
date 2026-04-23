@@ -17,6 +17,8 @@ from app.schemas.api_schemas import (
     AudienceEstimateResponse,
     AudiencePreviewRequest,
     AudiencePreviewResponse,
+    AudienceSummaryRequest,
+    AudienceSummaryResponse,
     CompileRequest,
     CompileResponse,
     SegmentCreate,
@@ -111,6 +113,20 @@ async def estimate_audience(payload: AudienceEstimateRequest):
         brand_code=payload.brand_code,
         rules=payload.rules,
         datalake_config=payload.datalake_config,
+    )
+    return result
+
+
+@router.post("/summary", response_model=AudienceSummaryResponse)
+async def get_segment_summary(payload: AudienceSummaryRequest):
+    """
+    Calculate behavioral summary metrics for a segment definition.
+    Shown alongside audience size in the segment builder UI.
+    """
+    result = await service.get_segment_summary(
+        brand_code=payload.brand_code,
+        rules=payload.rules,
+        metrics=payload.metrics,
     )
     return result
 
