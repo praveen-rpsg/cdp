@@ -60,9 +60,9 @@ SPENCERS_SCHEMA_MAP = {
     "geo.city": "p.city",
     "geo.street": "p.street",
     "geo.region": "p.region",
-    "geo.state": "loc.store_state",
-    "geo.zone": "loc.store_zone",
-    "geo.store_format": "loc.store_format",
+    "geo.state": "TRIM(loc.store_state)",
+    "geo.zone": "TRIM(loc.store_zone)",
+    "geo.store_format": "TRIM(loc.store_format)",
     "geo.home_store_id": "p.registered_store",
 
     # ── Transactional / Bill Summary (Precalculated) ──
@@ -138,7 +138,8 @@ SPENCERS_SCHEMA_MAP = {
     "bt.store_desc": "bt.store_desc",
     "bt.store_format": "bt.store_format",
     "bt.region": "bt.region",
-    "bt.region_desc": "bt.region_desc",
+    "bt.state": "bt.region_desc",
+    "bt.business_region": "loc.store_business_region",
     "bt.city": "bt.city",
     "bt.city_desc": "bt.city_desc",
     "bt.article": "bt.article",
@@ -296,8 +297,8 @@ class PgCompiler:
             )
         if self._needs_loc:
             parts.append(
-                "LEFT JOIN bronze.raw_location_master loc "
-                "ON loc.store_code = p.registered_store"
+                "INNER JOIN bronze.raw_location_master loc "
+                "ON TRIM(loc.store_code) = TRIM(p.registered_store)"
             )
 
         # Extra CTE-based JOINs
@@ -385,22 +386,30 @@ class PgCompiler:
         This avoids fan-out (the main query still returns 1 row per customer)
         while enabling filtering on any line-item attribute.
         """
-        col_name = cond.attribute_key.split(".", 1)[1]  # e.g., "brand_name"
-        col = f"bt.{col_name}"
+        col_suffix = cond.attribute_key.split(".", 1)[1]
+        
+        col = f"bt.{col_suffix}"
+        if cond.attribute_key in self.schema_mapping:
+            # If mapped to a different column (like bt.state -> bt.region_desc)
+            mapped_col = self.schema_mapping[cond.attribute_key]
+            if mapped_col.startswith("bt."):
+                col = mapped_col
+        
         inner_condition = self._operator_to_sql(col, cond.operator, cond.value, cond.second_value)
+        from_clause = "silver.s_fact_bill_transactions bt"
 
         if cond.negate:
             return (
                 f"NOT EXISTS (\n"
-                f"  SELECT 1 FROM silver.s_fact_bill_transactions bt\n"
-                f"  WHERE bt.mobile_number = p.canonical_mobile\n"
+                f"  SELECT 1 FROM {from_clause}\n"
+                f"  WHERE RIGHT(bt.mobile_number, 10) = RIGHT(p.canonical_mobile, 10)\n"
                 f"    AND {inner_condition}\n"
                 f")"
             )
         return (
             f"EXISTS (\n"
-            f"  SELECT 1 FROM silver.s_fact_bill_transactions bt\n"
-            f"  WHERE bt.mobile_number = p.canonical_mobile\n"
+            f"  SELECT 1 FROM {from_clause}\n"
+            f"  WHERE RIGHT(bt.mobile_number, 10) = RIGHT(p.canonical_mobile, 10)\n"
             f"    AND {inner_condition}\n"
             f")"
         )
@@ -514,12 +523,16 @@ class PgCompiler:
                 return f"{column} ILIKE {self._quote(f'%{value}')}"
             case "in_list":
                 if isinstance(value, list):
-                    return f"{column} IN {self._quote_list(value)}"
-                return f"{column} IN ({self._quote(value)})"
+                    arr = ", ".join(self._quote(v) for v in value)
+                else:
+                    arr = self._quote(value)
+                return f"{column} ILIKE ANY(ARRAY[{arr}])"
             case "not_in_list":
                 if isinstance(value, list):
-                    return f"{column} NOT IN {self._quote_list(value)}"
-                return f"{column} NOT IN ({self._quote(value)})"
+                    arr = ", ".join(self._quote(v) for v in value)
+                else:
+                    arr = self._quote(value)
+                return f"NOT ({column} ILIKE ANY(ARRAY[{arr}]))"
             case "regex_match":
                 return f"{column} ~ {self._quote(value)}"
             case "is_empty":

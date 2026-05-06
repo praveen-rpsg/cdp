@@ -54,9 +54,10 @@ services:
       PG_DB: cdp_meta
       PG_USER: cdp
       PG_PASSWORD: cdp
-      # AWS credentials injected via env or IAM role
+      # AWS credentials
       # CDP_AWS_ACCESS_KEY_ID: ...
       # CDP_AWS_SECRET_ACCESS_KEY: ...
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
     depends_on:
       postgres:
         condition: service_healthy

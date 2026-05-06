@@ -272,4 +272,58 @@ async def get_template(template_id: str):
     template = get_template_by_id(template_id)
     if not template:
         raise HTTPException(status_code=404, detail="Template not found")
+
+
+# =============================================================================
+# NATURAL LANGUAGE SEGMENTATION
+# =============================================================================
+
+from app.services.nl_segmentation.service import NLSegmentationService
+
+nl_service = NLSegmentationService()
+
+
+@router.post("/nl/query")
+async def nl_segment_query(payload: dict):
+    """
+    Convert a natural language query into a segment definition, compile SQL,
+    and return audience count.
+
+    Example: "High spenders who haven't bought in 60 days in Kolkata"
+    """
+    nl_query = payload.get("query", "").strip()
+    if not nl_query:
+        raise HTTPException(status_code=400, detail="Query is required")
+
+    brand_code = payload.get("brand_code", "spencers")
+    execute = payload.get("execute", True)
+
+    result = await nl_service.query(
+        nl_query=nl_query,
+        brand_code=brand_code,
+        execute=execute,
+    )
+    return result
+
+
+@router.post("/nl/suggest")
+async def nl_suggest(payload: dict):
+    """Suggest query completions based on partial input."""
+    partial = payload.get("query", "").strip()
+    if not partial:
+        return {"suggestions": []}
+
+    suggestions = await nl_service.suggest(partial)
+    return {"suggestions": suggestions}
+
+
+@router.post("/nl/explain")
+async def nl_explain_rules(payload: dict):
+    """Generate a human-readable explanation of a rule tree."""
+    rules = payload.get("rules")
+    if not rules:
+        raise HTTPException(status_code=400, detail="Rules are required")
+
+    explanation = await nl_service.explain(rules)
+    return {"explanation": explanation}
     return template.to_dict()
