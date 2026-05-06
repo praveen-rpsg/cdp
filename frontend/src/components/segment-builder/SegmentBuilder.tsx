@@ -23,6 +23,7 @@ import {
 import type { SetOperationType } from "../../types/segment";
 import { ConditionGroupUI } from "./ConditionGroupUI";
 import AudienceSummaryPanel from "./AudienceSummaryPanel";
+import { NLSegmentPanel } from "./NLSegmentPanel";
 
 export const SegmentBuilder: React.FC = () => {
   const {
@@ -66,6 +67,7 @@ export const SegmentBuilder: React.FC = () => {
     fetchSummary,
   } = useSegmentStore();
 
+  const [builderMode, setBuilderMode] = useState<"visual" | "nl">("visual");
   const [showSQL, setShowSQL] = useState(false);
   const [copiedSQL, setCopiedSQL] = useState(false);
   const [activeTab, setActiveTab] = useState<"builder" | "json">("builder");
@@ -136,6 +138,29 @@ export const SegmentBuilder: React.FC = () => {
             <h1 className="text-lg font-semibold text-gray-900">
               Segment Builder
             </h1>
+            {/* Mode toggle */}
+            <div className="flex bg-gray-100 rounded-lg p-0.5">
+              <button
+                onClick={() => setBuilderMode("visual")}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${
+                  builderMode === "visual"
+                    ? "bg-white text-indigo-700 shadow-sm"
+                    : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                Visual Builder
+              </button>
+              <button
+                onClick={() => setBuilderMode("nl")}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${
+                  builderMode === "nl"
+                    ? "bg-white text-indigo-700 shadow-sm"
+                    : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                Natural Language
+              </button>
+            </div>
             {isDirty && (
               <span className="px-2 py-0.5 text-xs bg-amber-100 text-amber-700 rounded-full">
                 Unsaved changes
@@ -167,6 +192,17 @@ export const SegmentBuilder: React.FC = () => {
         </div>
       </div>
 
+      {/* NL Mode — full-height chat interface */}
+      {builderMode === "nl" && (
+        <div className="max-w-5xl mx-auto px-6 py-6" style={{ height: "calc(100vh - 73px)" }}>
+          <div className="bg-white rounded-lg border border-gray-200 h-full flex flex-col overflow-hidden">
+            <NLSegmentPanel />
+          </div>
+        </div>
+      )}
+
+      {/* Visual Builder Mode */}
+      {builderMode === "visual" && (
       <div className="max-w-7xl mx-auto px-6 py-6 flex gap-6">
         {/* Main builder area */}
         <div className="flex-1 space-y-6">
@@ -879,6 +915,7 @@ export const SegmentBuilder: React.FC = () => {
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 };
