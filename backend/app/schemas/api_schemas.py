@@ -143,6 +143,7 @@ class AttributeResponse(BaseModel):
     is_b2b_only: bool
     applicable_brands: list[str] | None
     unit: str | None
+    source_table: str | None = None
 
 
 class AttributeCatalogResponse(BaseModel):

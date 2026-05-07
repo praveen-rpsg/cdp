@@ -1,0 +1,18 @@
+{
+  "brand_code": "spencers",
+  "name": "Test",
+  "rules": {
+    "root": {
+      "type": "group",
+      "logical_operator": "and",
+      "conditions": [
+        {
+          "type": "attribute",
+          "attribute_key": "identity.has_transactions",
+          "operator": "is_true",
+          "value": null
+        }
+      ]
+    }
+  }
+}
