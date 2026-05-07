@@ -43,7 +43,8 @@ export type AttributeCategory =
   | "utility_billing"
   | "utility_complaint"
   | "digital_adoption"
-  | "customer_experience";
+  | "customer_experience"
+  | "bill_transaction";
 
 export interface AttributeDefinition {
   key: string;
@@ -58,6 +59,7 @@ export interface AttributeDefinition {
   is_b2b_only: boolean;
   applicable_brands: string[] | null;
   unit: string | null;
+  source_table: string | null;
 }
 
 // =============================================================================
@@ -324,6 +326,7 @@ export const CATEGORY_CONFIG: Record<
   AttributeCategory,
   { label: string; icon: string; color: string }
 > = {
+  bill_transaction: { label: "Bill Transactions", icon: "shopping-bag", color: "#f43f5e" },
   identity: { label: "Identity", icon: "fingerprint", color: "#6366f1" },
   demographic: { label: "Demographics", icon: "users", color: "#8b5cf6" },
   geographic: { label: "Geography", icon: "map-pin", color: "#06b6d4" },

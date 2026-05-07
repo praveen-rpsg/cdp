@@ -193,11 +193,14 @@ class SegmentationService:
 
     async def estimate_audience_size(self, brand_code: str, rules: dict, datalake_config: dict | None = None) -> dict:
         """Estimate audience size by actually executing against Spencer's DWH."""
+        import json as _json
+        logger.info(f"[ESTIMATE] rules_json={_json.dumps(rules, default=str)}")
         definition = SegmentDefinition.model_validate(rules)
         compiler = PgCompiler(brand_code=brand_code)
 
         # Base query
         base_sql = compiler.compile(definition)
+        logger.info(f"[ESTIMATE] compiled_sql={base_sql}")
         count_sql = compiler.compile_count(definition)
 
         # Execute count

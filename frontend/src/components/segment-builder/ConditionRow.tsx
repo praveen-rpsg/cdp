@@ -204,27 +204,58 @@ const ValueInput: React.FC<ValueInputProps> = ({
   const val = value ?? condition.value;
   const dataType = attr?.data_type || "string";
 
-  // Categorical attributes with known example values → MultiSelectDropdown
+  // Dynamic values state — fetched from the DB when attr has a source_table
+  const [dynamicOptions, setDynamicOptions] = useState<string[] | null>(null);
+  const [loadingOptions, setLoadingOptions] = useState(false);
+
   const isMultiSelectOperator = ["equals", "not_equals", "in_list", "not_in_list"].includes(condition.operator);
-  if (
-    attr?.example_values &&
-    attr.example_values.length > 0 &&
-    !Array.isArray(attr.example_values[0]) &&
-    (attr.data_type === "string" || !attr.data_type) &&
-    isMultiSelectOperator
-  ) {
+  const hasDynamicSource = !!(attr?.source_table);
+  const hasExampleValues = !!(attr?.example_values && attr.example_values.length > 0 && !Array.isArray(attr.example_values[0]));
+  const shouldShowDropdown = (attr?.data_type === "string" || !attr?.data_type) && isMultiSelectOperator && (hasDynamicSource || hasExampleValues);
+
+  // Fetch dynamic values from the backend when the attribute changes and it has a source_table
+  useEffect(() => {
+    if (!attr?.source_table || !shouldShowDropdown) return;
+
+    setLoadingOptions(true);
+    setDynamicOptions(null);
+
+    fetch(`/api/v1/segments/attributes/${encodeURIComponent(attr.key)}/values?limit=500`)
+      .then((r) => r.json())
+      .then((data) => {
+        setDynamicOptions(data.values || []);
+      })
+      .catch(() => {
+        setDynamicOptions(null);
+      })
+      .finally(() => setLoadingOptions(false));
+  }, [attr?.key, attr?.source_table, shouldShowDropdown]);
+
+  // Categorical attributes → MultiSelectDropdown (dynamic or static)
+  if (shouldShowDropdown) {
+    if (loadingOptions) {
+      return (
+        <div className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-400 border rounded-md bg-gray-50 min-w-[200px]">
+          <div className="w-3.5 h-3.5 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin flex-shrink-0" />
+          <span>Loading values...</span>
+        </div>
+      );
+    }
+
+    // Prefer dynamically fetched options, fall back to example_values
+    const options = dynamicOptions ?? attr!.example_values.map((ev: any) => String(ev));
     const currentValues = Array.isArray(val)
       ? val
       : val && String(val).trim() !== ""
       ? [String(val)]
       : [];
-    const options = attr.example_values.map((ev: any) => String(ev));
+
     return (
       <MultiSelectDropdown
         options={options}
         values={currentValues}
         onChange={onMultiSelectChange || onChange}
-        placeholder="Select values..."
+        placeholder={`Select values... (${options.length} available)`}
       />
     );
   }
