@@ -211,8 +211,18 @@ export const NLSegmentPanel: React.FC = () => {
                     </button>
                     <button
                       onClick={() => {
-                        if (msg.result?.sql) {
+                        if (!msg.result?.sql) return;
+                        if (navigator.clipboard) {
                           navigator.clipboard.writeText(msg.result.sql);
+                        } else {
+                          const ta = document.createElement("textarea");
+                          ta.value = msg.result.sql;
+                          ta.style.position = "fixed";
+                          ta.style.opacity = "0";
+                          document.body.appendChild(ta);
+                          ta.select();
+                          document.execCommand("copy");
+                          document.body.removeChild(ta);
                         }
                       }}
                       className="px-3 py-1.5 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition"
