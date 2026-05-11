@@ -344,6 +344,81 @@ class SegmentationService:
             }
 
     # =========================================================================
+    # ATTRIBUTE DISTINCT VALUES (powers the /attributes/{key}/values endpoint)
+    # =========================================================================
+
+    # Maps the table-alias prefix used in SPENCERS_SCHEMA_MAP to the fully
+    # qualified PostgreSQL table name.
+    _ALIAS_TO_TABLE: dict[str, str] = {
+        "p":   "silver_identity.unified_profiles",
+        "ba":  "silver_reverse_etl.customer_behavioral_attributes",
+        "gs":  "silver_identity.identity_graph_summary",
+        "loc": "bronze.raw_location_master",
+        "bt":  "silver.s_fact_bill_transactions",
+    }
+
+    def get_attribute_distinct_values(
+        self,
+        attribute_key: str,
+        limit: int = 500,
+    ) -> list[str]:
+        """
+        Return the distinct non-null values for a given attribute key by
+        querying the actual DWH column.
+
+        The attribute key is resolved through SPENCERS_SCHEMA_MAP
+        (e.g. "consent.accepts_sms_marketing" → "ba.accepts_sms_marketing"),
+        then the alias prefix is mapped to the real table so we can run:
+
+            SELECT DISTINCT <col> FROM <table>
+            WHERE <col> IS NOT NULL AND TRIM(<col>::TEXT) != ''
+            ORDER BY <col>
+            LIMIT <limit>
+
+        Falls back to an empty list on any error so the UI can still render
+        using the static example_values from the attribute catalog.
+        """
+        from app.services.query_engine.pg_compiler import SPENCERS_SCHEMA_MAP
+
+        col_ref = SPENCERS_SCHEMA_MAP.get(attribute_key)
+        if not col_ref:
+            # Unknown attribute — cannot resolve to a column
+            return []
+
+        # col_ref is like "ba.accepts_sms_marketing" or "TRIM(loc.store_state)"
+        # Use a regex to extract alias and column name, safely handling any
+        # function wrappers such as TRIM(...) or CASE expressions.
+        import re
+        m = re.search(r'\b([a-z_]+)\.([a-z_]+)\b', col_ref, re.IGNORECASE)
+        if not m:
+            return []
+
+        alias = m.group(1)       # "ba", "p", "loc", "bt", …
+        col_name = m.group(2)    # "accepts_sms_marketing", "store_zone", …
+
+        table = self._ALIAS_TO_TABLE.get(alias)
+        if not table:
+            return []
+
+        sql = (
+            f"SELECT DISTINCT {col_name}::TEXT AS val "
+            f"FROM {table} "
+            f"WHERE {col_name} IS NOT NULL "
+            f"  AND TRIM({col_name}::TEXT) != '' "
+            f"ORDER BY val "
+            f"LIMIT {int(limit)}"
+        )
+
+        try:
+            rows = self._execute_pg(sql)
+            return [row["val"] for row in rows if row.get("val") is not None]
+        except Exception as e:
+            logger.warning(
+                f"Could not fetch distinct values for '{attribute_key}': {e}"
+            )
+            return []
+
+    # =========================================================================
     # SCHEDULED COMPUTATION
     # =========================================================================
 

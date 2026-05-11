@@ -182,6 +182,36 @@ async def trigger_compute(segment_id: str):
 # =============================================================================
 
 
+@router.get("/attributes/{attribute_key:path}/values")
+async def get_attribute_values(
+    attribute_key: str,
+    limit: int = Query(500, ge=1, le=2000, description="Max distinct values to return"),
+):
+    """
+    Return distinct non-null values for a specific attribute key.
+
+    Queries the real DWH column so the segment builder dropdown always shows
+    the actual stored values instead of the static catalog hints.
+
+    Example: GET /attributes/consent.accepts_sms_marketing/values
+             → {"attribute_key": "consent.accepts_sms_marketing",
+                "values": ["No", "Yes"],
+                "count": 2,
+                "source": "database"}
+
+    Falls back gracefully — if the column cannot be resolved or the DB is
+    unreachable the endpoint still returns 200 with an empty values list so
+    the UI can fall back to its static example_values without an error state.
+    """
+    values = service.get_attribute_distinct_values(attribute_key, limit=limit)
+    return {
+        "attribute_key": attribute_key,
+        "values": values,
+        "count": len(values),
+        "source": "database" if values else "fallback",
+    }
+
+
 @router.get("/attributes/catalog", response_model=AttributeCatalogResponse)
 async def get_attribute_catalog(
     brand_code: str | None = Query(None, description="Filter attributes by brand"),
@@ -220,6 +250,7 @@ async def get_attribute_catalog(
                 is_b2b_only=a.is_b2b_only,
                 applicable_brands=a.applicable_brands,
                 unit=a.unit,
+                source_table=a.source_table,
             )
             for a in attrs
         ],
