@@ -127,10 +127,12 @@ SPENCERS_SCHEMA_MAP = {
     "channel.online_bills": "ba.online_bills",
 
     # ── Consent / Preferences ──
-    "consent.dnd": "ba.dnd",
-    "consent.accepts_email_marketing": "ba.accepts_email_marketing",
-    "consent.accepts_sms_marketing": "ba.accepts_sms_marketing",
-    "consent.gw_customer_flag": "ba.gw_customer_flag",
+    # These columns live in silver_identity.unified_profiles (alias p), not in
+    # customer_behavioral_attributes, so we use p.* to avoid the ba JOIN.
+    "consent.dnd": "p.dnd",
+    "consent.accepts_email_marketing": "p.accepts_email_marketing",
+    "consent.accepts_sms_marketing": "p.accepts_sms_marketing",
+    "consent.gw_customer_flag": "p.gw_customer_flag",
 
     # ── Bill Transaction (line-item level, compiled as EXISTS subqueries) ──
     "bt.bill_date": "bt.bill_date",
@@ -142,6 +144,7 @@ SPENCERS_SCHEMA_MAP = {
     "bt.business_region": "loc.store_business_region",
     "bt.city": "bt.city",
     "bt.city_desc": "bt.city_desc",
+    "bt.region_desc": "bt.region_desc",
     "bt.article": "bt.article",
     "bt.article_desc": "bt.article_desc",
     "bt.segment_desc": "bt.segment_desc",
@@ -508,15 +511,23 @@ class PgCompiler:
 
     def _operator_to_sql(self, column: str, operator: str, value: Any, second_value: Any) -> str:
         match operator:
-            # String (equals/not_equals are case-insensitive via ILIKE for robustness)
+            # equals / not_equals: use ILIKE for strings (case-insensitive), = / != for numerics.
+            # ILIKE is a text-only operator in PostgreSQL — using it on integer/float columns
+            # raises "operator does not exist: integer ILIKE unknown".
             case "equals":
+                if isinstance(value, (int, float)):
+                    return f"{column} = {self._quote(value)}"
                 return f"{column} ILIKE {self._quote(value)}"
             case "not_equals":
-                return f"{column} NOT ILIKE {self._quote(value)}"
+                # NULL-safe: exclude the value but keep rows where the column has no value
+                if isinstance(value, (int, float)):
+                    return f"({column} != {self._quote(value)} OR {column} IS NULL)"
+                return f"({column} NOT ILIKE {self._quote(value)} OR {column} IS NULL)"
             case "contains":
                 return f"{column} ILIKE {self._quote(f'%{value}%')}"
             case "not_contains":
-                return f"{column} NOT ILIKE {self._quote(f'%{value}%')}"
+                # NULL-safe: keep NULLs so "does not contain X" includes unset rows
+                return f"({column} NOT ILIKE {self._quote(f'%{value}%')} OR {column} IS NULL)"
             case "starts_with":
                 return f"{column} ILIKE {self._quote(f'{value}%')}"
             case "ends_with":
@@ -532,7 +543,8 @@ class PgCompiler:
                     arr = ", ".join(self._quote(v) for v in value)
                 else:
                     arr = self._quote(value)
-                return f"NOT ({column} ILIKE ANY(ARRAY[{arr}]))"
+                # NULL-safe: keep NULLs so "not in list" includes rows with no value
+                return f"(NOT ({column} ILIKE ANY(ARRAY[{arr}])) OR {column} IS NULL)"
             case "regex_match":
                 return f"{column} ~ {self._quote(value)}"
             case "is_empty":

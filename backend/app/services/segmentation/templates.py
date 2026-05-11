@@ -259,7 +259,7 @@ TEMPLATES: list[SegmentTemplate] = [
         applicable_brands=["spencers"],
         business_function="marketing",
         rules=SegmentDefinition(root=_grp("and",
-            _attr("consent.accepts_sms_marketing", "equals", "Yes"),
+            _attr("consent.accepts_sms_marketing", "not_equals", "No"),
             _attr("consent.dnd", "not_equals", "Y"),
         )),
     ),

@@ -220,7 +220,7 @@ const ValueInput: React.FC<ValueInputProps> = ({
     setLoadingOptions(true);
     setDynamicOptions(null);
 
-    fetch(`/api/v1/segments/attributes/${encodeURIComponent(attr.key)}/values?limit=500`)
+    fetch(`/api/v1/segments/attributes/${encodeURIComponent(attr.key)}/values?limit=2000`)
       .then((r) => r.json())
       .then((data) => {
         setDynamicOptions(data.values || []);
