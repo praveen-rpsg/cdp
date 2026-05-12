@@ -10,8 +10,12 @@ Replaces the Athena compiler for local/POC usage with real Spencer's data.
 
 from __future__ import annotations
 
+import re
 from datetime import date
 from typing import Any
+
+# Matches ISO date strings (YYYY-MM-DD) sent by the frontend date picker.
+_ISO_DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
 
 from app.schemas.segment_rules import (
     AttributeCondition,
@@ -170,14 +174,11 @@ SPENCERS_SCHEMA_MAP = {
 
 class PgCompiler:
     """
-    Compiles SegmentDefinition rule trees into PostgreSQL SQL
-    against the Spencer's DWH schemas (dbt-generated).
+    Compiles SegmentDefinition rule trees into PostgreSQL SQL.
 
-    Main tables:
-    - silver_identity.unified_profiles p   (CIH-seeded customer profiles)
-    - silver_reverse_etl.customer_behavioral_attributes ba  (computed attrs)
-    - silver_identity.identity_graph_summary gs  (graph metrics)
-    - bronze.raw_location_master loc  (store info)
+    Supports multiple brands via the brand_schemas registry — each brand
+    maps to its own set of physical PostgreSQL tables while sharing the
+    same canonical attribute-key → column schema map.
     """
 
     def __init__(
@@ -185,8 +186,20 @@ class PgCompiler:
         brand_code: str = "spencers",
         schema_mapping: dict[str, str] | None = None,
     ):
+        # Import here to avoid circular imports (brand_schemas imports SPENCERS_SCHEMA_MAP)
+        from app.services.query_engine.brand_schemas import get_brand_config
+        cfg = get_brand_config(brand_code)
+
         self.brand_code = brand_code
-        self.schema_mapping = {**SPENCERS_SCHEMA_MAP, **(schema_mapping or {})}
+        self.schema_mapping = {**cfg["schema_map"], **(schema_mapping or {})}
+
+        # Physical table names — used in _build_query and _compile_bt_attribute
+        self._base_table = cfg["base_table"]
+        self._ba_table   = cfg["ba_table"]
+        self._gs_table   = cfg["gs_table"]
+        self._loc_table  = cfg["loc_table"]
+        self._bt_table   = cfg["bt_table"]
+
         self._cte_counter = 0
         self._ctes: list[str] = []
         self._extra_joins: list[str] = []
@@ -285,22 +298,22 @@ class PgCompiler:
             parts.append("WITH " + ",\n".join(self._ctes))
 
         parts.append(f"SELECT {select}")
-        parts.append("FROM silver_identity.unified_profiles p")
+        parts.append(f"FROM {self._base_table} p")
 
         # Standard JOINs based on what's needed
         if self._needs_ba:
             parts.append(
-                "LEFT JOIN silver_reverse_etl.customer_behavioral_attributes ba "
+                f"LEFT JOIN {self._ba_table} ba "
                 "ON ba.customer_id = p.unified_id"
             )
         if self._needs_gs:
             parts.append(
-                "LEFT JOIN silver_identity.identity_graph_summary gs "
+                f"LEFT JOIN {self._gs_table} gs "
                 "ON gs.unified_id = p.unified_id"
             )
         if self._needs_loc:
             parts.append(
-                "INNER JOIN bronze.raw_location_master loc "
+                f"INNER JOIN {self._loc_table} loc "
                 "ON TRIM(loc.store_code) = TRIM(p.registered_store)"
             )
 
@@ -399,7 +412,7 @@ class PgCompiler:
                 col = mapped_col
         
         inner_condition = self._operator_to_sql(col, cond.operator, cond.value, cond.second_value)
-        from_clause = "silver.s_fact_bill_transactions bt"
+        from_clause = f"{self._bt_table} bt"
 
         if cond.negate:
             return (
@@ -511,17 +524,24 @@ class PgCompiler:
 
     def _operator_to_sql(self, column: str, operator: str, value: Any, second_value: Any) -> str:
         match operator:
-            # equals / not_equals: use ILIKE for strings (case-insensitive), = / != for numerics.
-            # ILIKE is a text-only operator in PostgreSQL — using it on integer/float columns
-            # raises "operator does not exist: integer ILIKE unknown".
+            # equals / not_equals: route by value type.
+            # ILIKE is text-only in PostgreSQL — using it on DATE/integer/float columns
+            # raises "operator does not exist: <type> ILIKE unknown".
+            # • numerics  → bare = / !=  (no quotes)
+            # • date objects or ISO date strings (YYYY-MM-DD) → ::DATE cast + = / !=
+            # • everything else (strings) → case-insensitive ILIKE
             case "equals":
                 if isinstance(value, (int, float)):
                     return f"{column} = {self._quote(value)}"
+                if isinstance(value, date) or (isinstance(value, str) and _ISO_DATE_RE.match(value)):
+                    return f"{column}::DATE = {self._quote(value)}"
                 return f"{column} ILIKE {self._quote(value)}"
             case "not_equals":
                 # NULL-safe: exclude the value but keep rows where the column has no value
                 if isinstance(value, (int, float)):
                     return f"({column} != {self._quote(value)} OR {column} IS NULL)"
+                if isinstance(value, date) or (isinstance(value, str) and _ISO_DATE_RE.match(value)):
+                    return f"({column}::DATE != {self._quote(value)} OR {column} IS NULL)"
                 return f"({column} NOT ILIKE {self._quote(value)} OR {column} IS NULL)"
             case "contains":
                 return f"{column} ILIKE {self._quote(f'%{value}%')}"
@@ -751,7 +771,7 @@ def compile_split(
             val = split.get("value", "")
             used_values.append(val)
             # Resolve column from schema mapping
-            col = SPENCERS_SCHEMA_MAP.get(attribute, f"ba.{attribute.split('.')[-1]}")
+            col = self.schema_mapping.get(attribute, f"ba.{attribute.split('.')[-1]}")
             split_sql = (
                 f"SELECT * FROM (\n{base_sql}\n) base\n"
                 f"/* JOIN for split attribute */\n"
@@ -765,7 +785,7 @@ def compile_split(
 
         # Remainder split (everything NOT in named splits)
         if used_values:
-            col = SPENCERS_SCHEMA_MAP.get(attribute, f"ba.{attribute.split('.')[-1]}")
+            col = self.schema_mapping.get(attribute, f"ba.{attribute.split('.')[-1]}")
             vals = ", ".join(f"'{v}'" for v in used_values)
             remainder_sql = (
                 f"SELECT * FROM (\n{base_sql}\n) base\n"

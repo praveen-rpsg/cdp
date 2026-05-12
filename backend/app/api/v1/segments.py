@@ -186,6 +186,7 @@ async def trigger_compute(segment_id: str):
 async def get_attribute_values(
     attribute_key: str,
     limit: int = Query(500, ge=1, le=2000, description="Max distinct values to return"),
+    brand_code: str = Query("spencers", description="Brand to query values for"),
 ):
     """
     Return distinct non-null values for a specific attribute key.
@@ -203,7 +204,7 @@ async def get_attribute_values(
     unreachable the endpoint still returns 200 with an empty values list so
     the UI can fall back to its static example_values without an error state.
     """
-    values = service.get_attribute_distinct_values(attribute_key, limit=limit)
+    values = service.get_attribute_distinct_values(attribute_key, limit=limit, brand_code=brand_code)
     return {
         "attribute_key": attribute_key,
         "values": values,

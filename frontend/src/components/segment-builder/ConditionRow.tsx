@@ -22,7 +22,7 @@ interface Props {
 export const ConditionRow: React.FC<Props> = ({ condition }) => {
   const [showPicker, setShowPicker] = useState(false);
   const [navCategory, setNavCategory] = useState<string | undefined>(undefined);
-  const { attributeCatalog, updateCondition, removeCondition } =
+  const { attributeCatalog, updateCondition, removeCondition, selectedBrandCode } =
     useSegmentStore();
 
   const selectedAttr = useMemo(
@@ -133,6 +133,7 @@ export const ConditionRow: React.FC<Props> = ({ condition }) => {
         <ValueInput
           condition={condition}
           attr={selectedAttr}
+          brandCode={selectedBrandCode || "spencers"}
           onChange={(val) => updateCondition(condition.id, { value: val })}
           onMultiSelectChange={handleMultiSelectChange}
         />
@@ -145,6 +146,7 @@ export const ConditionRow: React.FC<Props> = ({ condition }) => {
           <ValueInput
             condition={condition}
             attr={selectedAttr}
+            brandCode={selectedBrandCode || "spencers"}
             value={condition.second_value}
             onChange={(val) =>
               updateCondition(condition.id, { second_value: val })
@@ -189,6 +191,7 @@ export const ConditionRow: React.FC<Props> = ({ condition }) => {
 interface ValueInputProps {
   condition: AttributeCondition;
   attr: AttributeDefinition | undefined;
+  brandCode?: string;
   value?: any;
   onChange: (value: any) => void;
   onMultiSelectChange?: (values: string[]) => void;
@@ -197,6 +200,7 @@ interface ValueInputProps {
 const ValueInput: React.FC<ValueInputProps> = ({
   condition,
   attr,
+  brandCode = "spencers",
   value,
   onChange,
   onMultiSelectChange,
@@ -220,7 +224,7 @@ const ValueInput: React.FC<ValueInputProps> = ({
     setLoadingOptions(true);
     setDynamicOptions(null);
 
-    fetch(`/api/v1/segments/attributes/${encodeURIComponent(attr.key)}/values?limit=2000`)
+    fetch(`/api/v1/segments/attributes/${encodeURIComponent(attr.key)}/values?limit=2000&brand_code=${encodeURIComponent(brandCode)}`)
       .then((r) => r.json())
       .then((data) => {
         setDynamicOptions(data.values || []);
