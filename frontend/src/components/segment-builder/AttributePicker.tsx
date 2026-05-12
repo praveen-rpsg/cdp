@@ -30,7 +30,7 @@ export const AttributePicker: React.FC<Props> = ({
     if (selectedBrandCode) {
       attrs = attrs.filter(
         (a) =>
-          a.applicable_brands === null ||
+          a.applicable_brands == null ||
           a.applicable_brands.includes(selectedBrandCode)
       );
     }
