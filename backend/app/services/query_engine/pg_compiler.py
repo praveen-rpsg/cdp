@@ -260,8 +260,9 @@ BRAND_SCHEMA_CONFIG: dict[str, dict[str, str]] = {
     },
 }
 
-# Fallback to Spencers for any unknown brand_code.
-_DEFAULT_BRAND = "spencers"
+# Known brand codes — any code not listed here raises ValueError at compile time
+# so a stale frontend brand code (e.g. "nbl") never silently queries the wrong tenant.
+_KNOWN_BRANDS = set(BRAND_SCHEMA_CONFIG.keys())  # {"spencers", "natures_basket", ...}
 
 
 class PgCompiler:
@@ -282,9 +283,14 @@ class PgCompiler:
         brand_code: str = "spencers",
         schema_mapping: dict[str, str] | None = None,
     ):
+        if brand_code not in _KNOWN_BRANDS:
+            raise ValueError(
+                f"Unknown brand_code '{brand_code}'. "
+                f"Valid values: {sorted(_KNOWN_BRANDS)}"
+            )
         self.brand_code = brand_code
         self.schema_mapping = {**SPENCERS_SCHEMA_MAP, **(schema_mapping or {})}
-        cfg = BRAND_SCHEMA_CONFIG.get(brand_code, BRAND_SCHEMA_CONFIG[_DEFAULT_BRAND])
+        cfg = BRAND_SCHEMA_CONFIG[brand_code]
         self._tbl_profiles  = cfg["unified_profiles"]
         self._tbl_ba        = cfg["customer_behavioral_attributes"]
         self._tbl_gs        = cfg["identity_graph_summary"]
