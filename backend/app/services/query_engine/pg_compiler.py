@@ -10,12 +10,8 @@ Replaces the Athena compiler for local/POC usage with real Spencer's data.
 
 from __future__ import annotations
 
-import re
 from datetime import date
 from typing import Any
-
-# Matches ISO date strings (YYYY-MM-DD) sent by the frontend date picker.
-_ISO_DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
 
 from app.schemas.segment_rules import (
     AttributeCondition,
@@ -30,6 +26,77 @@ from app.schemas.segment_rules import (
     TimeWindow,
     TimeWindowType,
 )
+
+
+def _looks_like_date(val: str) -> bool:
+    """Return True if val is an ISO date string (YYYY-MM-DD) rather than a text token."""
+    return (
+        len(val) == 10
+        and val[4:5] == "-"
+        and val[7:8] == "-"
+        and val[:4].isdigit()
+        and val[5:7].isdigit()
+        and val[8:10].isdigit()
+    )
+
+
+def _coerce_equals_sql(column: str, value, negate: bool = False) -> str:
+    """
+    Produce a type-safe equality SQL fragment.
+
+    ILIKE is text-only in PostgreSQL; using it on INTEGER / DATE columns
+    raises "operator does not exist".  We detect the value type (or infer it
+    from a string that looks like a date or number) and use the appropriate
+    operator instead.
+
+    negate=True returns a NULL-safe inequality fragment.
+    """
+    from datetime import date as _date
+
+    op = "!=" if negate else "="
+    null_suffix = " OR {col} IS NULL" if negate else ""
+
+    # Already-typed Python objects ──────────────────────────────────────────
+    if isinstance(value, bool):
+        literal = "TRUE" if value else "FALSE"
+        expr = f"{column} {op} {literal}"
+        return f"({expr} OR {column} IS NULL)" if negate else expr
+
+    if isinstance(value, (int, float)):
+        expr = f"{column} {op} {value}"
+        return f"({expr} OR {column} IS NULL)" if negate else expr
+
+    if isinstance(value, _date):
+        literal = f"'{value.isoformat()}'::DATE"
+        expr = f"{column} {op} {literal}"
+        return f"({expr} OR {column} IS NULL)" if negate else expr
+
+    # String value — attempt to infer the underlying type ───────────────────
+    val_str = str(value) if value is not None else ""
+
+    if _looks_like_date(val_str):
+        expr = f"{column}::DATE {op} '{val_str}'::DATE"
+        return f"({expr} OR {column} IS NULL)" if negate else expr
+
+    try:
+        num = int(val_str)
+        expr = f"{column} {op} {num}"
+        return f"({expr} OR {column} IS NULL)" if negate else expr
+    except (ValueError, TypeError):
+        pass
+
+    try:
+        num_f = float(val_str)
+        expr = f"{column} {op} {num_f}"
+        return f"({expr} OR {column} IS NULL)" if negate else expr
+    except (ValueError, TypeError):
+        pass
+
+    # Plain text — ILIKE is fine
+    escaped = val_str.replace("'", "''")
+    if negate:
+        return f"({column} NOT ILIKE '{escaped}' OR {column} IS NULL)"
+    return f"{column} ILIKE '{escaped}'"
 
 
 # Spencer's DWH schema mapping: canonical attribute keys -> actual PG columns
@@ -172,13 +239,42 @@ SPENCERS_SCHEMA_MAP = {
 }
 
 
+# Per-brand fully-qualified table names used in FROM / JOIN clauses.
+# The alias names (p, ba, gs, loc, bt) stay the same across brands so that
+# the rest of the compiler (schema_mapping references, _needs_* flags, etc.)
+# requires zero changes — only the FROM table strings differ.
+BRAND_SCHEMA_CONFIG: dict[str, dict[str, str]] = {
+    "spencers": {
+        "unified_profiles":                "silver_identity.unified_profiles",
+        "customer_behavioral_attributes":  "silver_reverse_etl.customer_behavioral_attributes",
+        "identity_graph_summary":          "silver_identity.identity_graph_summary",
+        "raw_location_master":             "bronze.raw_location_master",
+        "s_fact_bill_transactions":        "silver.s_fact_bill_transactions",
+    },
+    "natures_basket": {
+        "unified_profiles":                "nb_silver_identity.unified_profiles",
+        "customer_behavioral_attributes":  "nb_silver_reverse_etl.customer_behavioral_attributes",
+        "identity_graph_summary":          "nb_silver_identity.identity_graph_summary",
+        "raw_location_master":             "nb_bronze.raw_location_master",
+        "s_fact_bill_transactions":        "nb_silver.s_fact_bill_transactions",
+    },
+}
+
+# Fallback to Spencers for any unknown brand_code.
+_DEFAULT_BRAND = "spencers"
+
+
 class PgCompiler:
     """
-    Compiles SegmentDefinition rule trees into PostgreSQL SQL.
+    Compiles SegmentDefinition rule trees into PostgreSQL SQL
+    against the brand's DWH schemas.
 
-    Supports multiple brands via the brand_schemas registry — each brand
-    maps to its own set of physical PostgreSQL tables while sharing the
-    same canonical attribute-key → column schema map.
+    Main tables (resolved per brand via BRAND_SCHEMA_CONFIG):
+    - unified_profiles p
+    - customer_behavioral_attributes ba
+    - identity_graph_summary gs
+    - raw_location_master loc
+    - s_fact_bill_transactions bt  (EXISTS subqueries only)
     """
 
     def __init__(
@@ -186,20 +282,14 @@ class PgCompiler:
         brand_code: str = "spencers",
         schema_mapping: dict[str, str] | None = None,
     ):
-        # Import here to avoid circular imports (brand_schemas imports SPENCERS_SCHEMA_MAP)
-        from app.services.query_engine.brand_schemas import get_brand_config
-        cfg = get_brand_config(brand_code)
-
         self.brand_code = brand_code
-        self.schema_mapping = {**cfg["schema_map"], **(schema_mapping or {})}
-
-        # Physical table names — used in _build_query and _compile_bt_attribute
-        self._base_table = cfg["base_table"]
-        self._ba_table   = cfg["ba_table"]
-        self._gs_table   = cfg["gs_table"]
-        self._loc_table  = cfg["loc_table"]
-        self._bt_table   = cfg["bt_table"]
-
+        self.schema_mapping = {**SPENCERS_SCHEMA_MAP, **(schema_mapping or {})}
+        cfg = BRAND_SCHEMA_CONFIG.get(brand_code, BRAND_SCHEMA_CONFIG[_DEFAULT_BRAND])
+        self._tbl_profiles  = cfg["unified_profiles"]
+        self._tbl_ba        = cfg["customer_behavioral_attributes"]
+        self._tbl_gs        = cfg["identity_graph_summary"]
+        self._tbl_loc       = cfg["raw_location_master"]
+        self._tbl_bt        = cfg["s_fact_bill_transactions"]
         self._cte_counter = 0
         self._ctes: list[str] = []
         self._extra_joins: list[str] = []
@@ -298,22 +388,22 @@ class PgCompiler:
             parts.append("WITH " + ",\n".join(self._ctes))
 
         parts.append(f"SELECT {select}")
-        parts.append(f"FROM {self._base_table} p")
+        parts.append(f"FROM {self._tbl_profiles} p")
 
         # Standard JOINs based on what's needed
         if self._needs_ba:
             parts.append(
-                f"LEFT JOIN {self._ba_table} ba "
+                f"LEFT JOIN {self._tbl_ba} ba "
                 "ON ba.customer_id = p.unified_id"
             )
         if self._needs_gs:
             parts.append(
-                f"LEFT JOIN {self._gs_table} gs "
+                f"LEFT JOIN {self._tbl_gs} gs "
                 "ON gs.unified_id = p.unified_id"
             )
         if self._needs_loc:
             parts.append(
-                f"INNER JOIN {self._loc_table} loc "
+                f"INNER JOIN {self._tbl_loc} loc "
                 "ON TRIM(loc.store_code) = TRIM(p.registered_store)"
             )
 
@@ -396,7 +486,7 @@ class PgCompiler:
         Compile a Bill Transaction attribute condition as an EXISTS subquery.
 
         BT attributes are line-item level (one row per article per bill).
-        We compile them as EXISTS subqueries against silver.s_fact_bill_transactions
+        We compile them as EXISTS subqueries against the brand's s_fact_bill_transactions
         joined back to the main query via mobile_number = canonical_mobile.
 
         This avoids fan-out (the main query still returns 1 row per customer)
@@ -412,7 +502,7 @@ class PgCompiler:
                 col = mapped_col
         
         inner_condition = self._operator_to_sql(col, cond.operator, cond.value, cond.second_value)
-        from_clause = f"{self._bt_table} bt"
+        from_clause = f"{self._tbl_bt} bt"
 
         if cond.negate:
             return (
@@ -524,25 +614,15 @@ class PgCompiler:
 
     def _operator_to_sql(self, column: str, operator: str, value: Any, second_value: Any) -> str:
         match operator:
-            # equals / not_equals: route by value type.
-            # ILIKE is text-only in PostgreSQL — using it on DATE/integer/float columns
-            # raises "operator does not exist: <type> ILIKE unknown".
-            # • numerics  → bare = / !=  (no quotes)
-            # • date objects or ISO date strings (YYYY-MM-DD) → ::DATE cast + = / !=
-            # • everything else (strings) → case-insensitive ILIKE
+            # equals / not_equals: delegate to _coerce_equals_sql which handles
+            # INTEGER, DATE, FLOAT, and plain-text columns safely.
+            # ILIKE is a text-only operator in PostgreSQL — using it on integer/date
+            # columns raises "operator does not exist".
             case "equals":
-                if isinstance(value, (int, float)):
-                    return f"{column} = {self._quote(value)}"
-                if isinstance(value, date) or (isinstance(value, str) and _ISO_DATE_RE.match(value)):
-                    return f"{column}::DATE = {self._quote(value)}"
-                return f"{column} ILIKE {self._quote(value)}"
+                return _coerce_equals_sql(column, value, negate=False)
             case "not_equals":
                 # NULL-safe: exclude the value but keep rows where the column has no value
-                if isinstance(value, (int, float)):
-                    return f"({column} != {self._quote(value)} OR {column} IS NULL)"
-                if isinstance(value, date) or (isinstance(value, str) and _ISO_DATE_RE.match(value)):
-                    return f"({column}::DATE != {self._quote(value)} OR {column} IS NULL)"
-                return f"({column} NOT ILIKE {self._quote(value)} OR {column} IS NULL)"
+                return _coerce_equals_sql(column, value, negate=True)
             case "contains":
                 return f"{column} ILIKE {self._quote(f'%{value}%')}"
             case "not_contains":
@@ -771,7 +851,7 @@ def compile_split(
             val = split.get("value", "")
             used_values.append(val)
             # Resolve column from schema mapping
-            col = self.schema_mapping.get(attribute, f"ba.{attribute.split('.')[-1]}")
+            col = SPENCERS_SCHEMA_MAP.get(attribute, f"ba.{attribute.split('.')[-1]}")
             split_sql = (
                 f"SELECT * FROM (\n{base_sql}\n) base\n"
                 f"/* JOIN for split attribute */\n"
@@ -785,7 +865,7 @@ def compile_split(
 
         # Remainder split (everything NOT in named splits)
         if used_values:
-            col = self.schema_mapping.get(attribute, f"ba.{attribute.split('.')[-1]}")
+            col = SPENCERS_SCHEMA_MAP.get(attribute, f"ba.{attribute.split('.')[-1]}")
             vals = ", ".join(f"'{v}'" for v in used_values)
             remainder_sql = (
                 f"SELECT * FROM (\n{base_sql}\n) base\n"

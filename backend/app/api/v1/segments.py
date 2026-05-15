@@ -186,7 +186,7 @@ async def trigger_compute(segment_id: str):
 async def get_attribute_values(
     attribute_key: str,
     limit: int = Query(500, ge=1, le=2000, description="Max distinct values to return"),
-    brand_code: str = Query("spencers", description="Brand to query values for"),
+    brand_code: str = Query("spencers", description="Brand to query values from"),
 ):
     """
     Return distinct non-null values for a specific attribute key.
@@ -194,7 +194,7 @@ async def get_attribute_values(
     Queries the real DWH column so the segment builder dropdown always shows
     the actual stored values instead of the static catalog hints.
 
-    Example: GET /attributes/consent.accepts_sms_marketing/values
+    Example: GET /attributes/consent.accepts_sms_marketing/values?brand_code=natures_basket
              → {"attribute_key": "consent.accepts_sms_marketing",
                 "values": ["No", "Yes"],
                 "count": 2,
@@ -205,11 +205,27 @@ async def get_attribute_values(
     the UI can fall back to its static example_values without an error state.
     """
     values = service.get_attribute_distinct_values(attribute_key, limit=limit, brand_code=brand_code)
+    source = "database"
+
+    # When the DB returns nothing (column empty, table missing, or brand not yet
+    # populated) fall back to the catalog's static example_values so the UI
+    # always has something useful to show rather than a blank dropdown.
+    if not values:
+        from app.schemas.profile_attributes import ATTRIBUTE_BY_KEY
+        attr_def = ATTRIBUTE_BY_KEY.get(attribute_key)
+        if attr_def and attr_def.example_values:
+            values = [
+                str(v)
+                for v in attr_def.example_values
+                if v is not None and str(v).strip()
+            ]
+            source = "catalog"
+
     return {
         "attribute_key": attribute_key,
         "values": values,
         "count": len(values),
-        "source": "database" if values else "fallback",
+        "source": source,
     }
 
 
@@ -304,6 +320,7 @@ async def get_template(template_id: str):
     template = get_template_by_id(template_id)
     if not template:
         raise HTTPException(status_code=404, detail="Template not found")
+    return template.to_dict()
 
 
 # =============================================================================
@@ -358,4 +375,3 @@ async def nl_explain_rules(payload: dict):
 
     explanation = await nl_service.explain(rules)
     return {"explanation": explanation}
-    return template.to_dict()

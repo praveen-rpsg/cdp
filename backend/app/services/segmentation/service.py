@@ -106,7 +106,7 @@ class SegmentationService:
         definition = SegmentDefinition.model_validate(rules)
 
         # Compile and get count from PostgreSQL
-        compiler = PgCompiler(brand_code=brand_id)
+        compiler = PgCompiler(brand_code=brand_id or "spencers")
         count_sql = compiler.compile_count(definition)
         audience_count = self._execute_pg_count(count_sql)
 
@@ -152,8 +152,8 @@ class SegmentationService:
 
         # Apply rank if enabled
         if definition.rank and definition.rank.enabled and definition.rank.attribute:
-            from app.services.query_engine.brand_schemas import get_schema_map
-            rank_col = get_schema_map(brand_code).get(
+            from app.services.query_engine.pg_compiler import SPENCERS_SCHEMA_MAP
+            rank_col = SPENCERS_SCHEMA_MAP.get(
                 definition.rank.attribute,
                 f"ba.{definition.rank.attribute.split('.')[-1]}"
             )
@@ -347,6 +347,23 @@ class SegmentationService:
     # ATTRIBUTE DISTINCT VALUES (powers the /attributes/{key}/values endpoint)
     # =========================================================================
 
+    _ALIAS_TO_TABLE_BY_BRAND: dict[str, dict[str, str]] = {
+        "spencers": {
+            "p":   "silver_identity.unified_profiles",
+            "ba":  "silver_reverse_etl.customer_behavioral_attributes",
+            "gs":  "silver_identity.identity_graph_summary",
+            "loc": "bronze.raw_location_master",
+            "bt":  "silver.s_fact_bill_transactions",
+        },
+        "natures_basket": {
+            "p":   "nb_silver_identity.unified_profiles",
+            "ba":  "nb_silver_reverse_etl.customer_behavioral_attributes",
+            "gs":  "nb_silver_identity.identity_graph_summary",
+            "loc": "nb_bronze.raw_location_master",
+            "bt":  "nb_silver.s_fact_bill_transactions",
+        },
+    }
+
     def get_attribute_distinct_values(
         self,
         attribute_key: str,
@@ -355,11 +372,11 @@ class SegmentationService:
     ) -> list[str]:
         """
         Return the distinct non-null values for a given attribute key by
-        querying the actual DWH column for the specified brand.
+        querying the actual DWH column.
 
-        The attribute key is resolved through the brand's schema map
-        (e.g. "consent.accepts_sms_marketing" → "p.accepts_sms_marketing"),
-        then the alias prefix is mapped to the brand's real table so we run:
+        The attribute key is resolved through SPENCERS_SCHEMA_MAP
+        (e.g. "consent.accepts_sms_marketing" → "ba.accepts_sms_marketing"),
+        then the alias prefix is mapped to the real table so we can run:
 
             SELECT DISTINCT <col> FROM <table>
             WHERE <col> IS NOT NULL AND TRIM(<col>::TEXT) != ''
@@ -369,10 +386,9 @@ class SegmentationService:
         Falls back to an empty list on any error so the UI can still render
         using the static example_values from the attribute catalog.
         """
-        from app.services.query_engine.brand_schemas import get_schema_map, get_alias_tables
-        import re
+        from app.services.query_engine.pg_compiler import SPENCERS_SCHEMA_MAP
 
-        col_ref = get_schema_map(brand_code).get(attribute_key)
+        col_ref = SPENCERS_SCHEMA_MAP.get(attribute_key)
         if not col_ref:
             # Unknown attribute — cannot resolve to a column
             return []
@@ -380,6 +396,7 @@ class SegmentationService:
         # col_ref is like "ba.accepts_sms_marketing" or "TRIM(loc.store_state)"
         # Use a regex to extract alias and column name, safely handling any
         # function wrappers such as TRIM(...) or CASE expressions.
+        import re
         m = re.search(r'\b([a-z_]+)\.([a-z_]+)\b', col_ref, re.IGNORECASE)
         if not m:
             return []
@@ -387,8 +404,11 @@ class SegmentationService:
         alias = m.group(1)       # "ba", "p", "loc", "bt", …
         col_name = m.group(2)    # "accepts_sms_marketing", "store_zone", …
 
-        alias_tables = get_alias_tables(brand_code)
-        table = alias_tables.get(alias)
+        alias_map = self._ALIAS_TO_TABLE_BY_BRAND.get(
+            brand_code,
+            self._ALIAS_TO_TABLE_BY_BRAND["spencers"],
+        )
+        table = alias_map.get(alias)
         if not table:
             return []
 

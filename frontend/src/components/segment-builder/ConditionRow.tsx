@@ -133,7 +133,6 @@ export const ConditionRow: React.FC<Props> = ({ condition }) => {
         <ValueInput
           condition={condition}
           attr={selectedAttr}
-          brandCode={selectedBrandCode || "spencers"}
           onChange={(val) => updateCondition(condition.id, { value: val })}
           onMultiSelectChange={handleMultiSelectChange}
         />
@@ -146,7 +145,6 @@ export const ConditionRow: React.FC<Props> = ({ condition }) => {
           <ValueInput
             condition={condition}
             attr={selectedAttr}
-            brandCode={selectedBrandCode || "spencers"}
             value={condition.second_value}
             onChange={(val) =>
               updateCondition(condition.id, { second_value: val })
@@ -191,7 +189,6 @@ export const ConditionRow: React.FC<Props> = ({ condition }) => {
 interface ValueInputProps {
   condition: AttributeCondition;
   attr: AttributeDefinition | undefined;
-  brandCode?: string;
   value?: any;
   onChange: (value: any) => void;
   onMultiSelectChange?: (values: string[]) => void;
@@ -200,13 +197,13 @@ interface ValueInputProps {
 const ValueInput: React.FC<ValueInputProps> = ({
   condition,
   attr,
-  brandCode = "spencers",
   value,
   onChange,
   onMultiSelectChange,
 }) => {
   const val = value ?? condition.value;
   const dataType = attr?.data_type || "string";
+  const { selectedBrandCode } = useSegmentStore();
 
   // Dynamic values state — fetched from the DB when attr has a source_table
   const [dynamicOptions, setDynamicOptions] = useState<string[] | null>(null);
@@ -224,7 +221,8 @@ const ValueInput: React.FC<ValueInputProps> = ({
     setLoadingOptions(true);
     setDynamicOptions(null);
 
-    fetch(`/api/v1/segments/attributes/${encodeURIComponent(attr.key)}/values?limit=2000&brand_code=${encodeURIComponent(brandCode)}`)
+    const brandParam = selectedBrandCode ? `&brand_code=${encodeURIComponent(selectedBrandCode)}` : "";
+    fetch(`/api/v1/segments/attributes/${encodeURIComponent(attr.key)}/values?limit=2000${brandParam}`)
       .then((r) => r.json())
       .then((data) => {
         setDynamicOptions(data.values || []);
@@ -233,7 +231,7 @@ const ValueInput: React.FC<ValueInputProps> = ({
         setDynamicOptions(null);
       })
       .finally(() => setLoadingOptions(false));
-  }, [attr?.key, attr?.source_table, shouldShowDropdown]);
+  }, [attr?.key, attr?.source_table, shouldShowDropdown, selectedBrandCode]);
 
   // Categorical attributes → MultiSelectDropdown (dynamic or static)
   if (shouldShowDropdown) {
@@ -246,8 +244,11 @@ const ValueInput: React.FC<ValueInputProps> = ({
       );
     }
 
-    // Prefer dynamically fetched options, fall back to example_values
-    const options = dynamicOptions ?? attr!.example_values.map((ev: any) => String(ev));
+    // Prefer dynamically fetched options, fall back to example_values when DB returns empty
+    const options =
+      dynamicOptions && dynamicOptions.length > 0
+        ? dynamicOptions
+        : attr!.example_values.map((ev: any) => String(ev)).filter(Boolean);
     const currentValues = Array.isArray(val)
       ? val
       : val && String(val).trim() !== ""
