@@ -5,7 +5,7 @@
  * Adapts the value input based on the attribute's data type.
  */
 
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import { useSegmentStore } from "../../store/segmentStore";
 import {
   OPERATOR_LABELS,
@@ -21,7 +21,9 @@ interface Props {
 
 export const ConditionRow: React.FC<Props> = ({ condition }) => {
   const [showPicker, setShowPicker] = useState(false);
+  const [anchorRect, setAnchorRect] = useState<DOMRect | undefined>();
   const [navCategory, setNavCategory] = useState<string | undefined>(undefined);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const { attributeCatalog, updateCondition, removeCondition } =
     useSegmentStore();
 
@@ -34,6 +36,7 @@ export const ConditionRow: React.FC<Props> = ({ condition }) => {
   useEffect(() => {
     if (condition._initialCategory) {
       setNavCategory(condition._initialCategory);
+      if (triggerRef.current) setAnchorRect(triggerRef.current.getBoundingClientRect());
       setShowPicker(true);
       // Strip the transient property so it doesn't re-open or persist
       updateCondition(condition.id, { _initialCategory: undefined } as any);
@@ -93,9 +96,15 @@ export const ConditionRow: React.FC<Props> = ({ condition }) => {
   return (
     <div className="flex items-center gap-2 p-3 bg-white rounded-lg border border-gray-200 hover:border-indigo-300 transition-colors group">
       {/* Attribute selector */}
-      <div className="relative flex-shrink-0">
+      <div className="flex-shrink-0">
         <button
-          onClick={() => setShowPicker(!showPicker)}
+          ref={triggerRef}
+          onClick={() => {
+            if (!showPicker && triggerRef.current) {
+              setAnchorRect(triggerRef.current.getBoundingClientRect());
+            }
+            setShowPicker(!showPicker);
+          }}
           className="px-3 py-1.5 text-sm border rounded-md bg-gray-50 hover:bg-gray-100 min-w-[180px] text-left truncate"
         >
           {selectedAttr ? (
@@ -106,6 +115,7 @@ export const ConditionRow: React.FC<Props> = ({ condition }) => {
         </button>
         {showPicker && (
           <AttributePicker
+            anchorRect={anchorRect}
             initialCategory={navCategory}
             onSelect={handleSelectAttribute}
             onClose={() => setShowPicker(false)}
