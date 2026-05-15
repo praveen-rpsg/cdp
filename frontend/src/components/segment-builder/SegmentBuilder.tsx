@@ -25,6 +25,31 @@ import { ConditionGroupUI } from "./ConditionGroupUI";
 import AudienceSummaryPanel from "./AudienceSummaryPanel";
 import { NLSegmentPanel } from "./NLSegmentPanel";
 
+const RPSGLogo: React.FC<{ size?: number }> = ({ size = 38 }) => (
+  <svg width={size} height={size} viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="RP-Sanjiv Goenka Group">
+    <g transform="translate(40,40)">
+      {/* Primary petals — 8 at 45° increments */}
+      <path d="M0,0 L-6,-11 L0,-36 L6,-11 Z" fill="#7B2D8B"/>
+      <path d="M0,0 L-6,-11 L0,-36 L6,-11 Z" fill="#A030A0" transform="rotate(45)" opacity="0.82"/>
+      <path d="M0,0 L-6,-11 L0,-36 L6,-11 Z" fill="#C73280" transform="rotate(90)"/>
+      <path d="M0,0 L-6,-11 L0,-36 L6,-11 Z" fill="#E0402E" transform="rotate(135)" opacity="0.9"/>
+      <path d="M0,0 L-6,-11 L0,-36 L6,-11 Z" fill="#F06820" transform="rotate(180)"/>
+      <path d="M0,0 L-6,-11 L0,-36 L6,-11 Z" fill="#F5A010" transform="rotate(225)" opacity="0.85"/>
+      <path d="M0,0 L-5,-9 L0,-30 L5,-9 Z"  fill="#F0B82A" transform="rotate(270)" opacity="0.75"/>
+      <path d="M0,0 L-5,-9 L0,-30 L5,-9 Z"  fill="#8C35A5" transform="rotate(315)" opacity="0.78"/>
+      {/* Secondary petals — shorter, between primaries for depth */}
+      <path d="M0,0 L-4,-8 L0,-22 L4,-8 Z" fill="#C040B0" transform="rotate(22.5)"  opacity="0.6"/>
+      <path d="M0,0 L-4,-8 L0,-22 L4,-8 Z" fill="#D83560" transform="rotate(67.5)"  opacity="0.6"/>
+      <path d="M0,0 L-4,-8 L0,-22 L4,-8 Z" fill="#EC5030" transform="rotate(112.5)" opacity="0.6"/>
+      <path d="M0,0 L-4,-8 L0,-22 L4,-8 Z" fill="#F58518" transform="rotate(157.5)" opacity="0.6"/>
+      <path d="M0,0 L-4,-8 L0,-22 L4,-8 Z" fill="#F5B020" transform="rotate(202.5)" opacity="0.55"/>
+      <path d="M0,0 L-3,-7 L0,-18 L3,-7 Z" fill="#E0A030" transform="rotate(247.5)" opacity="0.5"/>
+      <path d="M0,0 L-3,-7 L0,-18 L3,-7 Z" fill="#9B40B0" transform="rotate(292.5)" opacity="0.55"/>
+      <path d="M0,0 L-4,-8 L0,-22 L4,-8 Z" fill="#8530A0" transform="rotate(337.5)" opacity="0.6"/>
+    </g>
+  </svg>
+);
+
 export const SegmentBuilder: React.FC = () => {
   const {
     segmentName,
@@ -133,9 +158,18 @@ export const SegmentBuilder: React.FC = () => {
     <div className="min-h-screen bg-gray-50">
       {/* Top bar */}
       <div className="bg-white border-b border-gray-200 sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <h1 className="text-lg font-semibold text-gray-900">
+        <div className="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-6">
+            {/* RPSG Branding */}
+            <div className="flex items-center gap-3 shrink-0">
+              <RPSGLogo size={38} />
+              <span className="text-xl font-semibold tracking-wide text-gray-800" style={{ letterSpacing: "0.04em" }}>
+                UNIFY 360
+              </span>
+            </div>
+            {/* Divider */}
+            <div className="w-px h-7 bg-gray-200 shrink-0" />
+            <h1 className="text-sm font-semibold text-gray-500 shrink-0">
               Segment Builder
             </h1>
             {/* Mode toggle */}
