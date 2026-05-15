@@ -22,7 +22,7 @@ interface Props {
 export const ConditionRow: React.FC<Props> = ({ condition }) => {
   const [showPicker, setShowPicker] = useState(false);
   const [navCategory, setNavCategory] = useState<string | undefined>(undefined);
-  const { attributeCatalog, updateCondition, removeCondition, selectedBrandCode } =
+  const { attributeCatalog, updateCondition, removeCondition } =
     useSegmentStore();
 
   const selectedAttr = useMemo(
@@ -203,7 +203,6 @@ const ValueInput: React.FC<ValueInputProps> = ({
 }) => {
   const val = value ?? condition.value;
   const dataType = attr?.data_type || "string";
-  const { selectedBrandCode } = useSegmentStore();
 
   // Dynamic values state — fetched from the DB when attr has a source_table
   const [dynamicOptions, setDynamicOptions] = useState<string[] | null>(null);
@@ -221,8 +220,7 @@ const ValueInput: React.FC<ValueInputProps> = ({
     setLoadingOptions(true);
     setDynamicOptions(null);
 
-    const brandParam = selectedBrandCode ? `&brand_code=${encodeURIComponent(selectedBrandCode)}` : "";
-    fetch(`/api/v1/segments/attributes/${encodeURIComponent(attr.key)}/values?limit=2000${brandParam}`)
+    fetch(`/api/v1/segments/attributes/${encodeURIComponent(attr.key)}/values?limit=2000`)
       .then((r) => r.json())
       .then((data) => {
         setDynamicOptions(data.values || []);
@@ -231,7 +229,7 @@ const ValueInput: React.FC<ValueInputProps> = ({
         setDynamicOptions(null);
       })
       .finally(() => setLoadingOptions(false));
-  }, [attr?.key, attr?.source_table, shouldShowDropdown, selectedBrandCode]);
+  }, [attr?.key, attr?.source_table, shouldShowDropdown]);
 
   // Categorical attributes → MultiSelectDropdown (dynamic or static)
   if (shouldShowDropdown) {
@@ -244,11 +242,8 @@ const ValueInput: React.FC<ValueInputProps> = ({
       );
     }
 
-    // Prefer dynamically fetched options, fall back to example_values when DB returns empty
-    const options =
-      dynamicOptions && dynamicOptions.length > 0
-        ? dynamicOptions
-        : attr!.example_values.map((ev: any) => String(ev)).filter(Boolean);
+    // Prefer dynamically fetched options, fall back to example_values
+    const options = dynamicOptions ?? attr!.example_values.map((ev: any) => String(ev));
     const currentValues = Array.isArray(val)
       ? val
       : val && String(val).trim() !== ""
