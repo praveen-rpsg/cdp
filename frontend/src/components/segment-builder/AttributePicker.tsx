@@ -5,7 +5,8 @@
  * in a condition row. It groups attributes by category with search.
  */
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
+import ReactDOM from "react-dom";
 import { useSegmentStore } from "../../store/segmentStore";
 import { CATEGORY_CONFIG, type AttributeDefinition } from "../../types/segment";
 
@@ -13,14 +14,23 @@ interface Props {
   onSelect: (attr: AttributeDefinition) => void;
   onClose: () => void;
   initialCategory?: string;
+  anchorRect?: DOMRect;
 }
 
 export const AttributePicker: React.FC<Props> = ({
   onSelect,
   onClose,
   initialCategory,
+  anchorRect,
 }) => {
   const [search, setSearch] = useState("");
+
+  // Close on scroll so the picker doesn't float away from its anchor
+  useEffect(() => {
+    const close = () => onClose();
+    window.addEventListener("scroll", close, true);
+    return () => window.removeEventListener("scroll", close, true);
+  }, [onClose]);
   const { attributeCatalog, selectedBrandCode, isFetchingCatalog, fetchCatalog } = useSegmentStore();
 
   const filtered = useMemo(() => {
@@ -62,8 +72,21 @@ export const AttributePicker: React.FC<Props> = ({
     return map;
   }, [filtered]);
 
-  return (
-    <div className="absolute z-50 mt-1 w-96 bg-white border border-gray-200 rounded-lg shadow-xl max-h-96 overflow-hidden flex flex-col">
+  const portalStyle: React.CSSProperties | undefined = anchorRect
+    ? {
+        position: "fixed",
+        top: anchorRect.bottom + 4,
+        left: Math.min(anchorRect.left, window.innerWidth - 384 - 8),
+        width: Math.min(384, window.innerWidth - 16),
+        zIndex: 9999,
+      }
+    : undefined;
+
+  const content = (
+    <div
+      className="bg-white border border-gray-200 rounded-lg shadow-2xl max-h-96 overflow-hidden flex flex-col"
+      style={portalStyle ?? { position: "absolute", top: "100%", marginTop: 4, width: 384, zIndex: 50 }}
+    >
       {/* Search */}
       <div className="p-3 border-b flex items-center justify-between gap-2">
         <input
@@ -172,4 +195,9 @@ export const AttributePicker: React.FC<Props> = ({
       </div>
     </div>
   );
+
+  if (anchorRect) {
+    return ReactDOM.createPortal(content, document.body);
+  }
+  return content;
 };

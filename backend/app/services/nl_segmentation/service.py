@@ -128,7 +128,6 @@ class NLSegmentationService:
             logger.warning("ANTHROPIC_API_KEY not set — NL segmentation will fail")
         self.client = anthropic.Anthropic(api_key=api_key)
         self.model = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
-        self.compiler = PgCompiler(SPENCERS_SCHEMA_MAP)
 
     async def query(
         self,
@@ -218,7 +217,7 @@ class NLSegmentationService:
         # Validate and compile to SQL
         try:
             definition = self._parse_definition(rules)
-            sql = self.compiler.compile_count(definition)
+            sql = PgCompiler(brand_code).compile_count(definition)
         except Exception as e:
             logger.error(f"Failed to compile NL rules to SQL: {e}")
             return {

@@ -347,20 +347,28 @@ class SegmentationService:
     # ATTRIBUTE DISTINCT VALUES (powers the /attributes/{key}/values endpoint)
     # =========================================================================
 
-    # Maps the table-alias prefix used in SPENCERS_SCHEMA_MAP to the fully
-    # qualified PostgreSQL table name.
-    _ALIAS_TO_TABLE: dict[str, str] = {
-        "p":   "silver_identity.unified_profiles",
-        "ba":  "silver_reverse_etl.customer_behavioral_attributes",
-        "gs":  "silver_identity.identity_graph_summary",
-        "loc": "bronze.raw_location_master",
-        "bt":  "silver.s_fact_bill_transactions",
+    _ALIAS_TO_TABLE_BY_BRAND: dict[str, dict[str, str]] = {
+        "spencers": {
+            "p":   "silver_identity.unified_profiles",
+            "ba":  "silver_reverse_etl.customer_behavioral_attributes",
+            "gs":  "silver_identity.identity_graph_summary",
+            "loc": "bronze.raw_location_master",
+            "bt":  "silver.s_fact_bill_transactions",
+        },
+        "natures_basket": {
+            "p":   "nb_silver_identity.unified_profiles",
+            "ba":  "nb_silver_reverse_etl.customer_behavioral_attributes",
+            "gs":  "nb_silver_identity.identity_graph_summary",
+            "loc": "nb_bronze.raw_location_master",
+            "bt":  "nb_silver.s_fact_bill_transactions",
+        },
     }
 
     def get_attribute_distinct_values(
         self,
         attribute_key: str,
         limit: int = 500,
+        brand_code: str = "spencers",
     ) -> list[str]:
         """
         Return the distinct non-null values for a given attribute key by
@@ -396,7 +404,11 @@ class SegmentationService:
         alias = m.group(1)       # "ba", "p", "loc", "bt", …
         col_name = m.group(2)    # "accepts_sms_marketing", "store_zone", …
 
-        table = self._ALIAS_TO_TABLE.get(alias)
+        alias_map = self._ALIAS_TO_TABLE_BY_BRAND.get(
+            brand_code,
+            self._ALIAS_TO_TABLE_BY_BRAND["spencers"],
+        )
+        table = alias_map.get(alias)
         if not table:
             return []
 
