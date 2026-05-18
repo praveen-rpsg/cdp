@@ -28,7 +28,13 @@ from typing import Any
 
 import redis.asyncio as aioredis
 from psycopg.rows import dict_row
-from psycopg_pool import AsyncConnectionPool
+
+try:
+    from psycopg_pool import AsyncConnectionPool
+    _HAS_POOL = True
+except ImportError:
+    AsyncConnectionPool = None  # type: ignore[assignment,misc]
+    _HAS_POOL = False
 
 from app.schemas.segment_rules import SegmentDefinition
 from app.services.query_engine.compiler import AthenaCompiler
@@ -68,15 +74,22 @@ async def init_resources() -> None:
     global _pg_pool, _redis
 
     conninfo = _get_pg_conninfo()
-    _pg_pool = AsyncConnectionPool(
-        conninfo,
-        min_size=2,
-        max_size=10,
-        open=False,
-        kwargs={"row_factory": dict_row},
-    )
-    await _pg_pool.open(wait=True)
-    logger.info("PostgreSQL connection pool opened (min=2, max=10)")
+    if _HAS_POOL:
+        try:
+            _pg_pool = AsyncConnectionPool(
+                conninfo,
+                min_size=2,
+                max_size=10,
+                open=False,
+                kwargs={"row_factory": dict_row},
+            )
+            await _pg_pool.open(wait=True)
+            logger.info("PostgreSQL connection pool opened (min=2, max=10)")
+        except Exception as exc:
+            logger.warning(f"Connection pool failed to open ({exc}) — falling back to per-request connections")
+            _pg_pool = None
+    else:
+        logger.warning("psycopg-pool not installed — run `pip install psycopg-pool` for connection pooling. Falling back to per-request connections.")
 
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
     try:
