@@ -32,18 +32,25 @@ export const MultiSelectDropdown: React.FC<Props> = ({
   const [search, setSearch] = useState("");
   const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  // Close on outside click or scroll
+  // Close on outside click or scroll OUTSIDE the dropdown
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      const insideTrigger = containerRef.current?.contains(e.target as Node);
+      const insideDropdown = dropdownRef.current?.contains(e.target as Node);
+      if (!insideTrigger && !insideDropdown) {
         setOpen(false);
         setSearch("");
       }
     };
-    const handleScroll = () => { setOpen(false); setSearch(""); };
+    const handleScroll = (e: Event) => {
+      if (dropdownRef.current?.contains(e.target as Node)) return;
+      setOpen(false);
+      setSearch("");
+    };
     document.addEventListener("mousedown", handleClick);
     window.addEventListener("scroll", handleScroll, true);
     return () => {
@@ -164,6 +171,7 @@ export const MultiSelectDropdown: React.FC<Props> = ({
       {/* Dropdown — portalled to body to escape overflow:hidden parents */}
       {open && anchorRect && ReactDOM.createPortal(
         <div
+          ref={dropdownRef}
           className="bg-white border border-gray-200 rounded-lg shadow-2xl flex flex-col max-h-72"
           style={{
             position: "fixed",
