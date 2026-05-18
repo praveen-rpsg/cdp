@@ -320,9 +320,16 @@ class PgCompiler:
         return self._build_query(where_clause, definition, select="DISTINCT p.unified_id AS customer_id")
 
     def compile_count(self, definition: SegmentDefinition) -> str:
-        """Compile a COUNT query for audience size estimation."""
-        inner = self.compile(definition)
-        return f"SELECT COUNT(*) AS audience_count FROM (\n{inner}\n) segment_results"
+        """Compile a COUNT query — COUNT(DISTINCT) directly avoids subquery materialisation."""
+        self._reset()
+        where_clause = self._compile_group(definition.root)
+        # Strip LIMIT/ORDER from the count definition — they're irrelevant for counting
+        from app.schemas.segment_rules import SegmentDefinition as _SD
+        count_def = _SD(root=definition.root)
+        return self._build_query(
+            where_clause, count_def,
+            select="COUNT(DISTINCT p.unified_id) AS audience_count"
+        )
 
     def compile_summary(self, definition: SegmentDefinition, metrics: list[str]) -> str:
         """
