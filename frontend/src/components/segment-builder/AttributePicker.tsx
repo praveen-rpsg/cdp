@@ -5,7 +5,7 @@
  * in a condition row. It groups attributes by category with search.
  */
 
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useRef } from "react";
 import ReactDOM from "react-dom";
 import { useSegmentStore } from "../../store/segmentStore";
 import { CATEGORY_CONFIG, type AttributeDefinition } from "../../types/segment";
@@ -24,10 +24,14 @@ export const AttributePicker: React.FC<Props> = ({
   anchorRect,
 }) => {
   const [search, setSearch] = useState("");
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Close on scroll so the picker doesn't float away from its anchor
+  // Close only when scrolling OUTSIDE the dropdown (e.g. the page behind it)
   useEffect(() => {
-    const close = () => onClose();
+    const close = (e: Event) => {
+      if (dropdownRef.current?.contains(e.target as Node)) return;
+      onClose();
+    };
     window.addEventListener("scroll", close, true);
     return () => window.removeEventListener("scroll", close, true);
   }, [onClose]);
@@ -84,6 +88,7 @@ export const AttributePicker: React.FC<Props> = ({
 
   const content = (
     <div
+      ref={dropdownRef}
       className="bg-white border border-gray-200 rounded-lg shadow-2xl max-h-96 overflow-hidden flex flex-col"
       style={portalStyle ?? { position: "absolute", top: "100%", marginTop: 4, width: 384, zIndex: 50 }}
     >

@@ -204,7 +204,7 @@ async def get_attribute_values(
     unreachable the endpoint still returns 200 with an empty values list so
     the UI can fall back to its static example_values without an error state.
     """
-    values = service.get_attribute_distinct_values(attribute_key, limit=limit, brand_code=brand_code)
+    values = await service._get_attribute_distinct_values_async(attribute_key, limit=limit, brand_code=brand_code)
     source = "database"
 
     # When the DB returns nothing (column empty, table missing, or brand not yet

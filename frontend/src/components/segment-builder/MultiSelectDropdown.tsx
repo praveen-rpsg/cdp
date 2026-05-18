@@ -11,6 +11,7 @@
  */
 
 import React, { useState, useRef, useEffect, useMemo } from "react";
+import ReactDOM from "react-dom";
 
 interface Props {
   options: string[];
@@ -29,19 +30,33 @@ export const MultiSelectDropdown: React.FC<Props> = ({
 }) => {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  // Close on outside click
+  // Close on outside click or scroll OUTSIDE the dropdown
   useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+    const handleClick = (e: MouseEvent) => {
+      const insideTrigger = containerRef.current?.contains(e.target as Node);
+      const insideDropdown = dropdownRef.current?.contains(e.target as Node);
+      if (!insideTrigger && !insideDropdown) {
         setOpen(false);
         setSearch("");
       }
     };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+    const handleScroll = (e: Event) => {
+      if (dropdownRef.current?.contains(e.target as Node)) return;
+      setOpen(false);
+      setSearch("");
+    };
+    document.addEventListener("mousedown", handleClick);
+    window.addEventListener("scroll", handleScroll, true);
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+      window.removeEventListener("scroll", handleScroll, true);
+    };
   }, []);
 
   // Focus search when opened
@@ -122,9 +137,15 @@ export const MultiSelectDropdown: React.FC<Props> = ({
     <div ref={containerRef} className="relative min-w-[200px] max-w-[380px]">
       {/* Trigger */}
       <button
+        ref={triggerRef}
         type="button"
         disabled={disabled}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          if (!open && triggerRef.current) {
+            setAnchorRect(triggerRef.current.getBoundingClientRect());
+          }
+          setOpen((o) => !o);
+        }}
         className={`w-full flex items-center justify-between gap-2 px-2.5 py-1.5 border rounded-md text-sm bg-white text-left transition-colors ${
           open ? "border-indigo-400 ring-2 ring-indigo-100" : "border-gray-300 hover:border-gray-400"
         } ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
@@ -147,9 +168,19 @@ export const MultiSelectDropdown: React.FC<Props> = ({
         </div>
       </button>
 
-      {/* Dropdown */}
-      {open && (
-        <div className="absolute z-50 mt-1 left-0 min-w-full w-72 bg-white border border-gray-200 rounded-lg shadow-xl flex flex-col max-h-72">
+      {/* Dropdown — portalled to body to escape overflow:hidden parents */}
+      {open && anchorRect && ReactDOM.createPortal(
+        <div
+          ref={dropdownRef}
+          className="bg-white border border-gray-200 rounded-lg shadow-2xl flex flex-col max-h-72"
+          style={{
+            position: "fixed",
+            top: anchorRect.bottom + 4,
+            left: Math.min(anchorRect.left, window.innerWidth - Math.min(288, window.innerWidth - 16) - 8),
+            width: Math.min(288, window.innerWidth - 16),
+            zIndex: 9999,
+          }}
+        >
           {/* Search */}
           <div className="p-2 border-b border-gray-100">
             <div className="relative">
@@ -232,7 +263,8 @@ export const MultiSelectDropdown: React.FC<Props> = ({
               {values.length} of {options.length} selected
             </div>
           )}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

@@ -24,7 +24,7 @@ export const ConditionRow: React.FC<Props> = ({ condition }) => {
   const [anchorRect, setAnchorRect] = useState<DOMRect | undefined>();
   const [navCategory, setNavCategory] = useState<string | undefined>(undefined);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const { attributeCatalog, updateCondition, removeCondition } =
+  const { attributeCatalog, updateCondition, removeCondition, selectedBrandCode } =
     useSegmentStore();
 
   const selectedAttr = useMemo(
@@ -143,6 +143,7 @@ export const ConditionRow: React.FC<Props> = ({ condition }) => {
         <ValueInput
           condition={condition}
           attr={selectedAttr}
+          brandCode={selectedBrandCode ?? "spencers"}
           onChange={(val) => updateCondition(condition.id, { value: val })}
           onMultiSelectChange={handleMultiSelectChange}
         />
@@ -155,6 +156,7 @@ export const ConditionRow: React.FC<Props> = ({ condition }) => {
           <ValueInput
             condition={condition}
             attr={selectedAttr}
+            brandCode={selectedBrandCode ?? "spencers"}
             value={condition.second_value}
             onChange={(val) =>
               updateCondition(condition.id, { second_value: val })
@@ -200,6 +202,7 @@ interface ValueInputProps {
   condition: AttributeCondition;
   attr: AttributeDefinition | undefined;
   value?: any;
+  brandCode?: string;
   onChange: (value: any) => void;
   onMultiSelectChange?: (values: string[]) => void;
 }
@@ -208,6 +211,7 @@ const ValueInput: React.FC<ValueInputProps> = ({
   condition,
   attr,
   value,
+  brandCode = "spencers",
   onChange,
   onMultiSelectChange,
 }) => {
@@ -223,14 +227,16 @@ const ValueInput: React.FC<ValueInputProps> = ({
   const hasExampleValues = !!(attr?.example_values && attr.example_values.length > 0 && !Array.isArray(attr.example_values[0]));
   const shouldShowDropdown = (attr?.data_type === "string" || !attr?.data_type) && isMultiSelectOperator && (hasDynamicSource || hasExampleValues);
 
-  // Fetch dynamic values from the backend when the attribute changes and it has a source_table
+  // Re-fetch whenever the attribute OR the brand changes
   useEffect(() => {
     if (!attr?.source_table || !shouldShowDropdown) return;
 
     setLoadingOptions(true);
     setDynamicOptions(null);
 
-    fetch(`/api/v1/segments/attributes/${encodeURIComponent(attr.key)}/values?limit=2000`)
+    fetch(
+      `/api/v1/segments/attributes/${encodeURIComponent(attr.key)}/values?limit=2000&brand_code=${encodeURIComponent(brandCode)}`
+    )
       .then((r) => r.json())
       .then((data) => {
         setDynamicOptions(data.values || []);
@@ -239,7 +245,7 @@ const ValueInput: React.FC<ValueInputProps> = ({
         setDynamicOptions(null);
       })
       .finally(() => setLoadingOptions(false));
-  }, [attr?.key, attr?.source_table, shouldShowDropdown]);
+  }, [attr?.key, attr?.source_table, shouldShowDropdown, brandCode]); // brandCode in deps → refetch on brand switch
 
   // Categorical attributes → MultiSelectDropdown (dynamic or static)
   if (shouldShowDropdown) {

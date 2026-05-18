@@ -2,12 +2,24 @@
 Composable CDP — FastAPI Application
 """
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.brands import router as brands_router
 from app.api.v1.segments import router as segments_router
 from app.core.config import settings
+from app.services.segmentation.service import close_resources, init_resources
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Open the DB pool and Redis on startup; close them on shutdown."""
+    await init_resources()
+    yield
+    await close_resources()
+
 
 app = FastAPI(
     title=settings.app_name,
@@ -15,6 +27,7 @@ app = FastAPI(
     description="Composable Customer Data Platform — Multi-Brand Segmentation Engine",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -25,7 +38,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount API routes
 app.include_router(brands_router, prefix=settings.api_prefix)
 app.include_router(segments_router, prefix=settings.api_prefix)
 
