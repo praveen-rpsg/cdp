@@ -563,7 +563,31 @@ export const SegmentBuilder: React.FC = () => {
                 <CollapsibleContent open={showSQL}>
                   <div className="relative group border-t border-gray-100">
                     <button
-                      onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(compiledSQL); setCopiedSQL(true); setTimeout(() => setCopiedSQL(false), 2000); }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const doCopy = () => { setCopiedSQL(true); setTimeout(() => setCopiedSQL(false), 2000); };
+                        if (navigator.clipboard) {
+                          navigator.clipboard.writeText(compiledSQL).then(doCopy).catch(() => {
+                            const ta = document.createElement("textarea");
+                            ta.value = compiledSQL;
+                            ta.style.cssText = "position:fixed;opacity:0;top:0;left:0";
+                            document.body.appendChild(ta);
+                            ta.select();
+                            document.execCommand("copy");
+                            document.body.removeChild(ta);
+                            doCopy();
+                          });
+                        } else {
+                          const ta = document.createElement("textarea");
+                          ta.value = compiledSQL;
+                          ta.style.cssText = "position:fixed;opacity:0;top:0;left:0";
+                          document.body.appendChild(ta);
+                          ta.select();
+                          document.execCommand("copy");
+                          document.body.removeChild(ta);
+                          doCopy();
+                        }
+                      }}
                       className="absolute top-2 right-2 p-1.5 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white rounded border border-gray-700 opacity-0 group-hover:opacity-100 transition-all duration-200 flex items-center gap-1"
                     >
                       {copiedSQL ? (
