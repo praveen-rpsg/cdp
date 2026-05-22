@@ -1,6 +1,16 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useSegmentStore } from "../../store/segmentStore";
 
+interface LLMTrace {
+  provider: string;
+  model: string;
+  region?: string;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  latency_ms: number | null;
+  cost_usd: number | null;
+}
+
 interface NLResult {
   nl_query: string;
   rules: any | null;
@@ -9,6 +19,9 @@ interface NLResult {
   estimated_count: number | null;
   error?: string;
   suggestion?: string;
+  is_cross_brand?: boolean;
+  brand_code?: string;
+  _llm_trace?: LLMTrace;
 }
 
 interface ChatMessage {
@@ -32,18 +45,29 @@ const EXAMPLE_QUERIES = [
   "Online-only shoppers with more than 10 bills",
 ];
 
+const CROSS_BRAND_EXAMPLE_QUERIES = [
+  "Spencers customers who have also shopped at Nature's Basket",
+  "Spencers at-risk customers who are also present in Nature's Basket",
+  "Cross-brand customers with NBL spend per bill above 500",
+  "Spencers lapsed customers who have also shopped at NBL",
+  "Customers active in both brands with more than 5 Spencers bills",
+];
+
 export const NLSegmentPanel: React.FC = () => {
   const { selectedBrandCode, loadRules, setSegmentName, setSegmentDescription } =
     useSegmentStore();
 
   const [query, setQuery] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const isCrossBrandMode = selectedBrandCode === "corporate";
+
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: "welcome",
       role: "system",
-      content:
-        "Describe your target audience in plain English. I'll translate it into a segment definition using Spencer's 84 attributes across identity, demographics, transactions, lifecycle, channel, and more.",
+      content: isCrossBrandMode
+        ? "Cross-Brand Mode active. Describe your audience across Spencers and Nature's Basket — I'll query the unified corporate silver layer (spn.* and nbl.* attributes)."
+        : "Describe your target audience in plain English. I'll translate it into a segment definition using Spencer's 84 attributes across identity, demographics, transactions, lifecycle, channel, and more.",
       timestamp: new Date(),
     },
   ]);
@@ -182,6 +206,12 @@ export const NLSegmentPanel: React.FC = () => {
 
               {msg.result && (
                 <div className="mt-3 space-y-3">
+                  {msg.result.is_cross_brand && (
+                    <div className="flex items-center gap-1.5 px-2 py-1 bg-purple-100 text-purple-700 rounded-md text-xs font-semibold w-fit">
+                      <span>🔗</span>
+                      <span>Cross-Brand Query — RPSG Corporate View</span>
+                    </div>
+                  )}
                   {msg.result.estimated_count !== null && (
                     <div className="flex items-center gap-2 bg-indigo-50 rounded-md px-3 py-2">
                       <span className="text-2xl font-bold text-indigo-700">
@@ -199,6 +229,83 @@ export const NLSegmentPanel: React.FC = () => {
                       <pre className="mt-1 p-2 bg-gray-900 text-green-400 rounded text-[10px] overflow-x-auto whitespace-pre-wrap">
                         {msg.result.sql}
                       </pre>
+                    </details>
+                  )}
+
+                  {msg.result._llm_trace && (
+                    <details className="text-xs">
+                      <summary className="cursor-pointer text-gray-400 hover:text-gray-600">
+                        LLM trace
+                      </summary>
+                      <div className="mt-1.5 p-2 bg-gray-50 border border-gray-100 rounded space-y-1 text-[10px] text-gray-500 font-mono">
+                        <div className="flex flex-wrap gap-x-4 gap-y-0.5">
+                          <span>
+                            <span className="text-gray-400">provider</span>{" "}
+                            <span className="text-indigo-600 font-semibold">
+                              {msg.result._llm_trace.provider}
+                            </span>
+                          </span>
+                          <span>
+                            <span className="text-gray-400">model</span>{" "}
+                            <span className="text-gray-700">
+                              {msg.result._llm_trace.model}
+                            </span>
+                          </span>
+                          {msg.result._llm_trace.region && (
+                            <span>
+                              <span className="text-gray-400">region</span>{" "}
+                              <span className="text-gray-700">
+                                {msg.result._llm_trace.region}
+                              </span>
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap gap-x-4 gap-y-0.5">
+                          <span>
+                            <span className="text-gray-400">in</span>{" "}
+                            <span className="text-gray-700">
+                              {msg.result._llm_trace.input_tokens?.toLocaleString() ?? "—"} tok
+                            </span>
+                          </span>
+                          <span>
+                            <span className="text-gray-400">out</span>{" "}
+                            <span className="text-gray-700">
+                              {msg.result._llm_trace.output_tokens?.toLocaleString() ?? "—"} tok
+                            </span>
+                          </span>
+                          <span>
+                            <span className="text-gray-400">total</span>{" "}
+                            <span className="text-gray-700">
+                              {msg.result._llm_trace.input_tokens != null &&
+                              msg.result._llm_trace.output_tokens != null
+                                ? (
+                                    msg.result._llm_trace.input_tokens +
+                                    msg.result._llm_trace.output_tokens
+                                  ).toLocaleString()
+                                : "—"}{" "}
+                              tok
+                            </span>
+                          </span>
+                          <span>
+                            <span className="text-gray-400">latency</span>{" "}
+                            <span className="text-gray-700">
+                              {msg.result._llm_trace.latency_ms != null
+                                ? `${msg.result._llm_trace.latency_ms.toLocaleString()} ms`
+                                : "—"}
+                            </span>
+                          </span>
+                          <span>
+                            <span className="text-gray-400">cost</span>{" "}
+                            <span className="text-emerald-600 font-semibold">
+                              {msg.result._llm_trace.cost_usd != null
+                                ? msg.result._llm_trace.cost_usd < 0.0001
+                                  ? "< $0.0001"
+                                  : `$${msg.result._llm_trace.cost_usd.toFixed(4)}`
+                                : "—"}
+                            </span>
+                          </span>
+                        </div>
+                      </div>
                     </details>
                   )}
 
@@ -257,16 +364,26 @@ export const NLSegmentPanel: React.FC = () => {
       {/* Example queries — shown only before first user message */}
       {messages.length <= 1 && (
         <div className="px-4 pb-2">
+          {isCrossBrandMode && (
+            <div className="flex items-center gap-1.5 mb-2 px-2 py-1 bg-purple-50 border border-purple-100 rounded-lg w-fit">
+              <span className="text-xs text-purple-600 font-semibold">🔗 Cross-Brand Mode</span>
+              <span className="text-xs text-purple-400">— queries run across Spencers + NBL</span>
+            </div>
+          )}
           <p className="text-xs text-gray-400 mb-2">Try one of these:</p>
           <div className="flex flex-wrap gap-2">
-            {EXAMPLE_QUERIES.slice(0, 6).map((eq, i) => (
+            {(isCrossBrandMode ? CROSS_BRAND_EXAMPLE_QUERIES : EXAMPLE_QUERIES).slice(0, 6).map((eq, i) => (
               <button
                 key={i}
                 onClick={() => {
                   setQuery(eq);
                   handleSubmit(eq);
                 }}
-                className="px-3 py-1.5 text-xs bg-gray-100 text-gray-600 rounded-full hover:bg-indigo-50 hover:text-indigo-700 transition"
+                className={`px-3 py-1.5 text-xs rounded-full transition ${
+                  isCrossBrandMode
+                    ? "bg-purple-50 text-purple-700 hover:bg-purple-100"
+                    : "bg-gray-100 text-gray-600 hover:bg-indigo-50 hover:text-indigo-700"
+                }`}
               >
                 {eq}
               </button>
@@ -314,7 +431,9 @@ export const NLSegmentPanel: React.FC = () => {
           </button>
         </div>
         <p className="text-[10px] text-gray-400 mt-1.5 text-center">
-          Powered by Claude &middot; Grounded in Spencer's semantic data dictionary (84 attributes)
+          {isCrossBrandMode
+            ? "AI-powered · Cross-Brand RPSG corporate silver layer · spn.* + nbl.* attributes"
+            : "AI-powered · Grounded in Spencer’s semantic data dictionary (84 attributes)"}
         </p>
       </div>
     </div>

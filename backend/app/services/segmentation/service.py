@@ -40,6 +40,7 @@ from app.schemas.segment_rules import SegmentDefinition
 from app.services.query_engine.compiler import AthenaCompiler
 from app.services.query_engine.pg_compiler import (
     PgCompiler,
+    CorporatePgCompiler,
     compile_ranked,
     compile_set_operation,
     compile_set_operation_count,
@@ -47,6 +48,18 @@ from app.services.query_engine.pg_compiler import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _make_compiler(brand_code: str) -> PgCompiler:
+    """
+    Factory that returns the appropriate SQL compiler for a brand.
+
+    ``"corporate"`` → CorporatePgCompiler  (flat cross-brand table, r1_id identity)
+    everything else → PgCompiler           (per-brand DWH with unified_profiles)
+    """
+    if brand_code == "corporate":
+        return CorporatePgCompiler()
+    return PgCompiler(brand_code=brand_code)
 
 # ---------------------------------------------------------------------------
 # Module-level shared resources — initialised once at app startup
@@ -64,8 +77,8 @@ def _get_pg_conninfo() -> str:
     host = os.getenv("PG_HOST", "localhost")
     port = os.getenv("PG_PORT", "5432")
     dbname = os.getenv("PG_DB", "cdp_meta")
-    user = os.getenv("PG_USER", "postgres")
-    password = os.getenv("PG_PASSWORD", "Raghav_1174")
+    user = os.getenv("PG_USER", "cdp")
+    password = os.getenv("PG_PASSWORD", "cdp")
     return f"host={host} port={port} dbname={dbname} user={user} password={password}"
 
 
@@ -237,7 +250,7 @@ class SegmentationService:
         slug = name.lower().replace(" ", "-").replace("_", "-")
         definition = SegmentDefinition.model_validate(rules)
 
-        compiler = PgCompiler(brand_code=brand_id or "spencers")
+        compiler = _make_compiler(brand_id or "spencers")
         count_sql = compiler.compile_count(definition)
         audience_count = await self._execute_pg_count(count_sql)
 
@@ -277,7 +290,7 @@ class SegmentationService:
 
     def compile_segment_query(self, brand_code: str, rules: dict, datalake_config: dict | None = None) -> str:
         definition = SegmentDefinition.model_validate(rules)
-        compiler = PgCompiler(brand_code=brand_code)
+        compiler = _make_compiler(brand_code)
         sql = compiler.compile(definition)
 
         if definition.rank and definition.rank.enabled and definition.rank.attribute:
@@ -297,12 +310,12 @@ class SegmentationService:
 
     def compile_count_query(self, brand_code: str, rules: dict, datalake_config: dict | None = None) -> str:
         definition = SegmentDefinition.model_validate(rules)
-        compiler = PgCompiler(brand_code=brand_code)
+        compiler = _make_compiler(brand_code)
         return compiler.compile_count(definition)
 
     def compile_preview_query(self, brand_code: str, rules: dict, limit: int = 100, datalake_config: dict | None = None) -> str:
         definition = SegmentDefinition.model_validate(rules)
-        compiler = PgCompiler(brand_code=brand_code)
+        compiler = _make_compiler(brand_code)
         return compiler.compile_preview(definition, limit=limit)
 
     def compile_athena_query(self, brand_code: str, rules: dict, datalake_config: dict | None = None) -> str:
@@ -324,7 +337,7 @@ class SegmentationService:
         import json as _json
         logger.info(f"[ESTIMATE] brand={brand_code}")
         definition = SegmentDefinition.model_validate(rules)
-        compiler = PgCompiler(brand_code=brand_code)
+        compiler = _make_compiler(brand_code)
 
         base_sql = compiler.compile(definition)
         count_sql = compiler.compile_count(definition)
@@ -349,7 +362,7 @@ class SegmentationService:
             for entry in so.segments:
                 if entry.rules:
                     entry_def = SegmentDefinition.model_validate(entry.rules.model_dump())
-                    entry_compiler = PgCompiler(brand_code=brand_code)
+                    entry_compiler = _make_compiler(brand_code)
                     segment_sqls.append(entry_compiler.compile(entry_def))
 
             if len(segment_sqls) > 1:
@@ -413,7 +426,7 @@ class SegmentationService:
             metrics = ["total_spend", "avg_spend", "total_bills", "avg_visits", "spend_per_bill", "spend_per_visit"]
 
         definition = SegmentDefinition.model_validate(rules)
-        compiler = PgCompiler(brand_code=brand_code)
+        compiler = _make_compiler(brand_code)
         summary_sql = compiler.compile_summary(definition, metrics)
 
         try:
@@ -503,6 +516,10 @@ class SegmentationService:
             "loc": "nb_bronze.raw_location_master",
             "bt":  "nb_silver.s_fact_bill_transactions",
         },
+        # Corporate cross-brand view — single flat table, alias "corp"
+        "corporate": {
+            "corp": "corporate_cih.silver_corp_customer_attributes",
+        },
     }
 
     def get_attribute_distinct_values(
@@ -538,10 +555,20 @@ class SegmentationService:
         brand_code: str = "spencers",
     ) -> list[str]:
         """Fetch distinct non-null values for an attribute — cached for 1 hour."""
-        from app.services.query_engine.pg_compiler import SPENCERS_SCHEMA_MAP
+        from app.services.query_engine.pg_compiler import SPENCERS_SCHEMA_MAP, CORPORATE_SCHEMA_MAP
         import re
 
-        col_ref = SPENCERS_SCHEMA_MAP.get(attribute_key)
+        # Resolve the column reference from the appropriate schema map
+        if brand_code == "corporate":
+            col_ref = CORPORATE_SCHEMA_MAP.get(attribute_key)
+            # Auto-derive spn.*/nbl.* keys not in the map
+            if not col_ref:
+                parts = attribute_key.split(".", 1)
+                if len(parts) == 2 and parts[0] in ("spn", "nbl"):
+                    col_ref = f"corp.{parts[0]}_{parts[1]}"
+        else:
+            col_ref = SPENCERS_SCHEMA_MAP.get(attribute_key)
+
         if not col_ref:
             return []
 

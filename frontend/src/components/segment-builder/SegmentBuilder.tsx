@@ -158,7 +158,7 @@ export const SegmentBuilder: React.FC = () => {
           description: segmentDescription,
           segment_type: segmentType,
           rules: getSegmentDefinition(),
-          is_cross_brand: false,
+          is_cross_brand: selectedBrandCode === "corporate",
         }),
       });
       const data = await response.json();
@@ -319,7 +319,14 @@ export const SegmentBuilder: React.FC = () => {
                 </div>
                 <div className="flex gap-3">
                   <div className="flex-1">
-                    <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1.5">Brand</label>
+                    <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1.5">
+                      Brand
+                      {selectedBrandCode === "corporate" && (
+                        <span className="ml-2 px-1.5 py-0.5 text-[10px] bg-purple-100 text-purple-700 rounded-full font-semibold normal-case tracking-normal">
+                          🔗 Cross-Brand
+                        </span>
+                      )}
+                    </label>
                     <select value={selectedBrandCode || ""} onChange={(e) => setSelectedBrand(e.target.value)} className={selectCls}>
                       <option value="">Select brand…</option>
                       {brands.map((b) => <option key={b.code} value={b.code}>{b.name}</option>)}

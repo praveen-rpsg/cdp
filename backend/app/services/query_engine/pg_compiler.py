@@ -265,6 +265,166 @@ BRAND_SCHEMA_CONFIG: dict[str, dict[str, str]] = {
 _KNOWN_BRANDS = set(BRAND_SCHEMA_CONFIG.keys())  # {"spencers", "natures_basket", ...}
 
 
+# =============================================================================
+# Corporate / Cross-Brand Schema Map
+# =============================================================================
+# Maps canonical attribute keys used in segment rules to actual column references
+# on the flat corporate_cih.silver_corp_customer_attributes table (alias: corp).
+#
+# Attribute namespaces:
+#   spn.*   → Spencers behavioral attributes (spn_* columns)
+#   nbl.*   → Nature's Basket behavioral attributes (nbl_* columns)
+#   corp.*  → Cross-brand RPSG metrics / identity
+
+CORPORATE_TABLE = "corporate_cih.silver_corp_customer_attributes"
+
+CORPORATE_SCHEMA_MAP: dict[str, str] = {
+
+    # ── Cross-brand identity ──────────────────────────────────────────────────
+    "corp.r1_id":                   "corp.r1_id",
+    "corp.mobile":                  "corp.mobile",
+    "corp.rpsg_brand_presence":     "corp.rpsg_brand_presence",
+    "corp.rpsg_ftd":                "corp.rpsg_ftd",
+    "corp.rpsg_ltd":                "corp.rpsg_ltd",
+    "corp.rpsg_tenure_lifetime":    "corp.rpsg_tenure_lifetime",
+    "corp.rpsg_recency_lifetime":   "corp.rpsg_recency_lifetime",
+    # Brand membership (IS NOT NULL on the lifecycle_stage column is used as the
+    # existence check — NULL means the customer has no data for that brand)
+    "corp.is_spencers_customer":    "corp.spn_lifecycle_stage",
+    "corp.is_nbl_customer":         "corp.nbl_lifecycle_stage",
+
+    # ── Spencers profile ─────────────────────────────────────────────────────
+    "spn.display_name":             "corp.spn_display_name",
+    "spn.email":                    "corp.spn_email",
+    "spn.city":                     "corp.spn_city",
+    "spn.pincode":                  "corp.spn_pincode",
+    "spn.region":                   "corp.spn_region",
+    "spn.registered_store":         "corp.spn_registered_store",
+    "spn.age":                      "corp.spn_age",
+    "spn.customer_group":           "corp.spn_customer_group",
+    "spn.occupation":               "corp.spn_occupation",
+    "spn.whatsapp":                 "corp.spn_whatsapp",
+    "spn.dnd":                      "corp.spn_dnd",
+    "spn.gw_customer_flag":         "corp.spn_gw_customer_flag",
+    "spn.accepts_email_marketing":  "corp.spn_accepts_email_marketing",
+    "spn.accepts_sms_marketing":    "corp.spn_accepts_sms_marketing",
+
+    # ── Spencers transactional ────────────────────────────────────────────────
+    "spn.first_bill_date":          "corp.spn_first_bill_date",
+    "spn.last_bill_date":           "corp.spn_last_bill_date",
+    "spn.recency_days":             "corp.spn_recency_days",
+    "spn.tenure_days":              "corp.spn_tenure_days",
+    "spn.total_bills":              "corp.spn_total_bills",
+    "spn.total_visits":             "corp.spn_total_visits",
+    "spn.total_spend":              "corp.spn_total_spend",
+    "spn.spend_per_bill":           "corp.spn_spend_per_bill",
+    "spn.spend_per_visit":          "corp.spn_spend_per_visit",
+    "spn.avg_items_per_bill":       "corp.spn_avg_items_per_bill",
+    "spn.total_discount":           "corp.spn_total_discount",
+    "spn.distinct_months":          "corp.spn_distinct_months",
+    "spn.distinct_store_count":     "corp.spn_distinct_store_count",
+    "spn.distinct_article_count":   "corp.spn_distinct_article_count",
+    "spn.dgbt_fs":                  "corp.spn_dgbt_fs",
+    "spn.avg_billing_time_secs":    "corp.spn_avg_billing_time_secs",
+    "spn.return_bill_count":        "corp.spn_return_bill_count",
+    "spn.promo_bill_count":         "corp.spn_promo_bill_count",
+    "spn.weekend_bill_count":       "corp.spn_weekend_bill_count",
+    "spn.wednesday_bill_count":     "corp.spn_wednesday_bill_count",
+
+    # ── Spencers favourites ───────────────────────────────────────────────────
+    "spn.fav_store_code":              "corp.spn_fav_store_code",
+    "spn.fav_store_name":              "corp.spn_fav_store_name",
+    "spn.fav_store_type":              "corp.spn_fav_store_type",
+    "spn.fav_day":                     "corp.spn_fav_day",
+    "spn.fav_article_by_spend":        "corp.spn_fav_article_by_spend",
+    "spn.fav_article_by_spend_desc":   "corp.spn_fav_article_by_spend_desc",
+    "spn.fav_article_by_nob":          "corp.spn_fav_article_by_nob",
+    "spn.fav_article_by_nob_desc":     "corp.spn_fav_article_by_nob_desc",
+    "spn.second_fav_article_by_spend": "corp.spn_second_fav_article_by_spend",
+    "spn.second_fav_article_by_nob":   "corp.spn_second_fav_article_by_nob",
+
+    # ── Spencers lifecycle / channel ──────────────────────────────────────────
+    "spn.channel_presence":         "corp.spn_channel_presence",
+    "spn.spend_decile":             "corp.spn_spend_decile",
+    "spn.nob_decile":               "corp.spn_nob_decile",
+    "spn.l1_segment":               "corp.spn_l1_segment",
+    "spn.l2_segment":               "corp.spn_l2_segment",
+    "spn.store_spend":              "corp.spn_store_spend",
+    "spn.online_spend":             "corp.spn_online_spend",
+    "spn.store_bills":              "corp.spn_store_bills",
+    "spn.online_bills":             "corp.spn_online_bills",
+    "spn.lifecycle_stage":          "corp.spn_lifecycle_stage",
+    "spn.rfm_recency_score":        "corp.spn_rfm_recency_score",
+    "spn.rfm_frequency_score":      "corp.spn_rfm_frequency_score",
+    "spn.rfm_monetary_score":       "corp.spn_rfm_monetary_score",
+
+    # ── NBL profile ───────────────────────────────────────────────────────────
+    "nbl.display_name":             "corp.nbl_display_name",
+    "nbl.email":                    "corp.nbl_email",
+    "nbl.city":                     "corp.nbl_city",
+    "nbl.pincode":                  "corp.nbl_pincode",
+    "nbl.region":                   "corp.nbl_region",
+    "nbl.registered_store":         "corp.nbl_registered_store",
+    "nbl.age":                      "corp.nbl_age",
+    "nbl.customer_group":           "corp.nbl_customer_group",
+    "nbl.occupation":               "corp.nbl_occupation",
+    "nbl.whatsapp":                 "corp.nbl_whatsapp",
+    "nbl.dnd":                      "corp.nbl_dnd",
+    "nbl.gw_customer_flag":         "corp.nbl_gw_customer_flag",
+    "nbl.accepts_email_marketing":  "corp.nbl_accepts_email_marketing",
+    "nbl.accepts_sms_marketing":    "corp.nbl_accepts_sms_marketing",
+
+    # ── NBL transactional ─────────────────────────────────────────────────────
+    "nbl.first_bill_date":          "corp.nbl_first_bill_date",
+    "nbl.last_bill_date":           "corp.nbl_last_bill_date",
+    "nbl.recency_days":             "corp.nbl_recency_days",
+    "nbl.tenure_days":              "corp.nbl_tenure_days",
+    "nbl.total_bills":              "corp.nbl_total_bills",
+    "nbl.total_visits":             "corp.nbl_total_visits",
+    "nbl.total_spend":              "corp.nbl_total_spend",
+    "nbl.spend_per_bill":           "corp.nbl_spend_per_bill",
+    "nbl.spend_per_visit":          "corp.nbl_spend_per_visit",
+    "nbl.avg_items_per_bill":       "corp.nbl_avg_items_per_bill",
+    "nbl.total_discount":           "corp.nbl_total_discount",
+    "nbl.distinct_months":          "corp.nbl_distinct_months",
+    "nbl.distinct_store_count":     "corp.nbl_distinct_store_count",
+    "nbl.distinct_article_count":   "corp.nbl_distinct_article_count",
+    "nbl.dgbt_fs":                  "corp.nbl_dgbt_fs",
+    "nbl.avg_billing_time_secs":    "corp.nbl_avg_billing_time_secs",
+    "nbl.return_bill_count":        "corp.nbl_return_bill_count",
+    "nbl.promo_bill_count":         "corp.nbl_promo_bill_count",
+    "nbl.weekend_bill_count":       "corp.nbl_weekend_bill_count",
+    "nbl.wednesday_bill_count":     "corp.nbl_wednesday_bill_count",
+
+    # ── NBL favourites ────────────────────────────────────────────────────────
+    "nbl.fav_store_code":              "corp.nbl_fav_store_code",
+    "nbl.fav_store_name":              "corp.nbl_fav_store_name",
+    "nbl.fav_store_type":              "corp.nbl_fav_store_type",
+    "nbl.fav_day":                     "corp.nbl_fav_day",
+    "nbl.fav_article_by_spend":        "corp.nbl_fav_article_by_spend",
+    "nbl.fav_article_by_spend_desc":   "corp.nbl_fav_article_by_spend_desc",
+    "nbl.fav_article_by_nob":          "corp.nbl_fav_article_by_nob",
+    "nbl.fav_article_by_nob_desc":     "corp.nbl_fav_article_by_nob_desc",
+    "nbl.second_fav_article_by_spend": "corp.nbl_second_fav_article_by_spend",
+    "nbl.second_fav_article_by_nob":   "corp.nbl_second_fav_article_by_nob",
+
+    # ── NBL lifecycle / channel ───────────────────────────────────────────────
+    "nbl.channel_presence":         "corp.nbl_channel_presence",
+    "nbl.spend_decile":             "corp.nbl_spend_decile",
+    "nbl.nob_decile":               "corp.nbl_nob_decile",
+    "nbl.l1_segment":               "corp.nbl_l1_segment",
+    "nbl.l2_segment":               "corp.nbl_l2_segment",
+    "nbl.store_spend":              "corp.nbl_store_spend",
+    "nbl.online_spend":             "corp.nbl_online_spend",
+    "nbl.store_bills":              "corp.nbl_store_bills",
+    "nbl.online_bills":             "corp.nbl_online_bills",
+    "nbl.lifecycle_stage":          "corp.nbl_lifecycle_stage",
+    "nbl.rfm_recency_score":        "corp.nbl_rfm_recency_score",
+    "nbl.rfm_frequency_score":      "corp.nbl_rfm_frequency_score",
+    "nbl.rfm_monetary_score":       "corp.nbl_rfm_monetary_score",
+}
+
+
 class PgCompiler:
     """
     Compiles SegmentDefinition rule trees into PostgreSQL SQL
@@ -610,6 +770,34 @@ class PgCompiler:
         self._needs_ba = True
         return f"ba.{col_name}"
 
+    def _values_are_numeric(self, values) -> bool:
+        """Return True if every value in the list can be emitted as a numeric SQL literal."""
+        items = values if isinstance(values, list) else [values]
+        if not items:
+            return False
+        for v in items:
+            if isinstance(v, bool):
+                return False
+            if isinstance(v, (int, float)):
+                continue
+            try:
+                float(str(v))
+            except (ValueError, TypeError):
+                return False
+        return True
+
+    def _numeric_literal(self, v: Any) -> str:
+        """Return a bare numeric SQL literal (no quotes) for a value known to be numeric."""
+        if isinstance(v, int):
+            return str(v)
+        if isinstance(v, float):
+            return str(v)
+        s = str(v).strip()
+        try:
+            return str(int(s))
+        except ValueError:
+            return str(float(s))
+
     def _quote(self, value: Any) -> str:
         if value is None:
             return "NULL"
@@ -646,17 +834,19 @@ class PgCompiler:
             case "ends_with":
                 return f"{column} ILIKE {self._quote(f'%{value}')}"
             case "in_list":
-                if isinstance(value, list):
-                    arr = ", ".join(self._quote(v) for v in value)
-                else:
-                    arr = self._quote(value)
+                items = value if isinstance(value, list) else [value]
+                if self._values_are_numeric(items):
+                    arr = ", ".join(self._numeric_literal(v) for v in items)
+                    return f"{column} = ANY(ARRAY[{arr}])"
+                arr = ", ".join(self._quote(v) for v in items)
                 return f"{column} ILIKE ANY(ARRAY[{arr}])"
             case "not_in_list":
-                if isinstance(value, list):
-                    arr = ", ".join(self._quote(v) for v in value)
-                else:
-                    arr = self._quote(value)
-                # NULL-safe: keep NULLs so "not in list" includes rows with no value
+                items = value if isinstance(value, list) else [value]
+                if self._values_are_numeric(items):
+                    arr = ", ".join(self._numeric_literal(v) for v in items)
+                    # NULL-safe: keep NULLs so "not in list" includes rows with no value
+                    return f"(NOT ({column} = ANY(ARRAY[{arr}])) OR {column} IS NULL)"
+                arr = ", ".join(self._quote(v) for v in items)
                 return f"(NOT ({column} ILIKE ANY(ARRAY[{arr}])) OR {column} IS NULL)"
             case "regex_match":
                 return f"{column} ~ {self._quote(value)}"
@@ -740,6 +930,236 @@ class PgCompiler:
 
             case _:
                 raise ValueError(f"Unsupported operator: {operator}")
+
+
+# =============================================================================
+# Corporate / Cross-Brand Compiler
+# =============================================================================
+
+class CorporatePgCompiler(PgCompiler):
+    """
+    Compiles SegmentDefinition rule trees for the Corporate cross-brand view.
+
+    Unlike PgCompiler (which joins multiple tables per brand), this compiler
+    operates on a single flat denormalised table:
+
+        corporate_cih.silver_corp_customer_attributes  (alias: corp)
+
+    One row per r1_id. Columns are prefixed:
+        spn_*   Spencers behavioral attributes (NULL if not a Spencers customer)
+        nbl_*   Nature's Basket attributes     (NULL if not an NBL customer)
+
+    Identity key : corp.r1_id   (RPSG universal ID)
+    Contact key  : corp.mobile
+
+    Attribute namespaces in segment rules:
+        spn.<name>      →  corp.spn_<name>
+        nbl.<name>      →  corp.nbl_<name>
+        corp.<name>     →  corp.<name>  (cross-brand / RPSG metrics)
+
+    Cross-brand membership assertions:
+        "corp.spn_lifecycle_stage IS NOT NULL"  ≡  customer shops at Spencers
+        "corp.nbl_lifecycle_stage IS NOT NULL"  ≡  customer shops at NBL
+    """
+
+    def __init__(self, schema_mapping: dict[str, str] | None = None):
+        # Bypass PgCompiler.__init__ — we don't use brand-schema config at all.
+        self.brand_code = "corporate"
+        self.schema_mapping = {**CORPORATE_SCHEMA_MAP, **(schema_mapping or {})}
+        self._tbl_corp = CORPORATE_TABLE
+        self._cte_counter = 0
+        self._ctes: list[str] = []
+        self._extra_joins: list[str] = []
+        self._needs_ba = False
+        self._needs_gs = False
+        self._needs_loc = False
+        self._needs_nps = False
+
+    # ── Column resolution ──────────────────────────────────────────────────────
+
+    def _resolve_column(self, attribute_key: str) -> str:
+        """
+        Resolve an attribute key to a SQL column reference.
+
+        Lookup order:
+          1. Explicit map  (CORPORATE_SCHEMA_MAP + overrides)
+          2. spn.<col>  →  corp.spn_<col>
+          3. nbl.<col>  →  corp.nbl_<col>
+          4. corp.<col> →  corp.<col>
+          5. Bare name  →  corp.<name>
+        """
+        if attribute_key in self.schema_mapping:
+            return self.schema_mapping[attribute_key]
+
+        parts = attribute_key.split(".", 1)
+        if len(parts) == 2:
+            ns, col = parts
+            if ns in ("spn", "nbl"):
+                return f"corp.{ns}_{col}"
+            if ns == "corp":
+                return f"corp.{col}"
+
+        # Fallback — bare column name prefixed with table alias
+        return f"corp.{attribute_key.replace('.', '_')}"
+
+    # ── Query builders ─────────────────────────────────────────────────────────
+
+    def _build_query(self, where_clause: str, definition: SegmentDefinition, select: str) -> str:
+        parts: list[str] = []
+
+        if self._ctes:
+            parts.append("WITH " + ",\n".join(self._ctes))
+
+        parts.append(f"SELECT {select}")
+        parts.append(f"FROM {self._tbl_corp} corp")
+
+        for join in self._extra_joins:
+            parts.append(join)
+
+        if where_clause and where_clause != "1=1":
+            parts.append(f"WHERE {where_clause}")
+
+        if definition.order_by:
+            col = self._resolve_column(definition.order_by)
+            direction = (definition.order_direction or "desc").upper()
+            parts.append(f"ORDER BY {col} {direction} NULLS LAST")
+
+        if definition.limit:
+            parts.append(f"LIMIT {int(definition.limit)}")
+
+        return "\n".join(parts)
+
+    def compile(self, definition: SegmentDefinition) -> str:
+        self._reset()
+        where_clause = self._compile_group(definition.root)
+        return self._build_query(
+            where_clause, definition,
+            select="DISTINCT corp.r1_id AS customer_id",
+        )
+
+    def compile_count(self, definition: SegmentDefinition) -> str:
+        self._reset()
+        where_clause = self._compile_group(definition.root)
+        from app.schemas.segment_rules import SegmentDefinition as _SD
+        count_def = _SD(root=definition.root)
+        return self._build_query(
+            where_clause, count_def,
+            select="COUNT(DISTINCT corp.r1_id) AS audience_count",
+        )
+
+    def compile_preview(self, definition: SegmentDefinition, limit: int = 100) -> str:
+        self._reset()
+        where_clause = self._compile_group(definition.root)
+        select = (
+            "corp.r1_id AS customer_id,\n"
+            "  corp.mobile,\n"
+            "  COALESCE(corp.spn_display_name, corp.nbl_display_name) AS name,\n"
+            "  COALESCE(corp.spn_email, corp.nbl_email) AS email,\n"
+            "  corp.rpsg_brand_presence,\n"
+            "  corp.spn_lifecycle_stage,\n"
+            "  corp.nbl_lifecycle_stage,\n"
+            "  corp.spn_spend_per_bill,\n"
+            "  corp.nbl_spend_per_bill"
+        )
+        preview_def = SegmentDefinition(root=definition.root, limit=limit)
+        return self._build_query(where_clause, preview_def, select=select)
+
+    def compile_summary(self, definition: SegmentDefinition, metrics: list[str]) -> str:
+        self._reset()
+        where_clause = self._compile_group(definition.root)
+
+        agg_map = {
+            # ── Combined cross-brand totals ────────────────────────────────────
+            "total_bills":    "SUM(COALESCE(corp.spn_total_bills, 0) + COALESCE(corp.nbl_total_bills, 0))",
+            "total_spend":    "SUM(COALESCE(corp.spn_total_spend, 0) + COALESCE(corp.nbl_total_spend, 0))",
+            "total_visits":   "SUM(COALESCE(corp.spn_total_visits, 0) + COALESCE(corp.nbl_total_visits, 0))",
+            # ── Combined averages ──────────────────────────────────────────────
+            "avg_spend":      "AVG(COALESCE(corp.spn_total_spend, 0) + COALESCE(corp.nbl_total_spend, 0))",
+            "avg_bills":      "AVG(COALESCE(corp.spn_total_bills, 0) + COALESCE(corp.nbl_total_bills, 0))",
+            "avg_visits":     "AVG(COALESCE(corp.spn_total_visits, 0) + COALESCE(corp.nbl_total_visits, 0))",
+            # ── Combined spend per bill / visit (cross-brand weighted) ─────────
+            "spend_per_bill": (
+                "CASE WHEN SUM(COALESCE(corp.spn_total_bills, 0) + COALESCE(corp.nbl_total_bills, 0)) > 0 "
+                "THEN SUM(COALESCE(corp.spn_total_spend, 0) + COALESCE(corp.nbl_total_spend, 0)) "
+                "/ SUM(COALESCE(corp.spn_total_bills, 0) + COALESCE(corp.nbl_total_bills, 0)) "
+                "ELSE 0 END"
+            ),
+            "spend_per_visit": (
+                "CASE WHEN SUM(COALESCE(corp.spn_total_visits, 0) + COALESCE(corp.nbl_total_visits, 0)) > 0 "
+                "THEN SUM(COALESCE(corp.spn_total_spend, 0) + COALESCE(corp.nbl_total_spend, 0)) "
+                "/ SUM(COALESCE(corp.spn_total_visits, 0) + COALESCE(corp.nbl_total_visits, 0)) "
+                "ELSE 0 END"
+            ),
+            # ── Per-brand breakdowns ───────────────────────────────────────────
+            "spn_total_bills":    "SUM(COALESCE(corp.spn_total_bills, 0))",
+            "nbl_total_bills":    "SUM(COALESCE(corp.nbl_total_bills, 0))",
+            "spn_total_spend":    "SUM(COALESCE(corp.spn_total_spend, 0))",
+            "nbl_total_spend":    "SUM(COALESCE(corp.nbl_total_spend, 0))",
+            "spn_spend_per_bill": "AVG(corp.spn_spend_per_bill)",
+            "nbl_spend_per_bill": "AVG(corp.nbl_spend_per_bill)",
+            "spn_spend_per_visit": "AVG(corp.spn_spend_per_visit)",
+            "nbl_spend_per_visit": "AVG(corp.nbl_spend_per_visit)",
+        }
+
+        select_parts = ["COUNT(*) AS audience_size"]
+        for m in metrics:
+            if m in agg_map:
+                select_parts.append(f"{agg_map[m]} AS {m}")
+
+        return self._build_query(
+            where_clause, definition,
+            select=",\n  ".join(select_parts),
+        )
+
+    # ── Special column overrides ───────────────────────────────────────────────
+
+    def _compile_attribute(self, cond) -> str:
+        """
+        Override to intercept rpsg_brand_presence with contains/not_contains,
+        which must use ILIKE '%value%' against the Python-list-repr text column.
+        All other attribute conditions fall through to the parent implementation.
+        """
+        col = self._resolve_column(cond.attribute_key)
+        if col == "corp.rpsg_brand_presence":
+            val = str(cond.value or "").replace("'", "''")
+            if cond.operator == "contains":
+                sql = f"corp.rpsg_brand_presence ILIKE '%{val}%'"
+            elif cond.operator == "not_contains":
+                sql = f"(corp.rpsg_brand_presence NOT ILIKE '%{val}%' OR corp.rpsg_brand_presence IS NULL)"
+            elif cond.operator in ("exists", "not_exists"):
+                sql = (
+                    "corp.rpsg_brand_presence IS NOT NULL"
+                    if cond.operator == "exists"
+                    else "corp.rpsg_brand_presence IS NULL"
+                )
+            else:
+                # equals / other ops: warn and fall back to ILIKE exact match
+                escaped = str(cond.value or "").replace("'", "''")
+                sql = f"corp.rpsg_brand_presence ILIKE '{escaped}'"
+            return f"(NOT ({sql}))" if getattr(cond, "negate", False) else sql
+        return super()._compile_attribute(cond)
+
+    # ── No BT (line-item) data in corporate view ───────────────────────────────
+
+    def _compile_bt_attribute(self, cond) -> str:
+        """Corporate view has no line-item transaction data — return always-true."""
+        return "1=1"
+
+    # ── Event conditions — map to spn / nbl totals ─────────────────────────────
+
+    def _compile_event(self, cond) -> str:
+        """
+        For corporate queries, 'purchase' events resolve to combined brand bill counts.
+        """
+        if cond.event_name in ("purchase", "transaction"):
+            if cond.operator == "has_performed":
+                return "(corp.spn_total_bills > 0 OR corp.nbl_total_bills > 0)"
+            elif cond.operator == "has_not_performed":
+                return (
+                    "(COALESCE(corp.spn_total_bills, 0) = 0 "
+                    "AND COALESCE(corp.nbl_total_bills, 0) = 0)"
+                )
+        return "1=1"
 
 
 # =============================================================================

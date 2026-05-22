@@ -327,9 +327,14 @@ async def get_template(template_id: str):
 # NATURAL LANGUAGE SEGMENTATION
 # =============================================================================
 
+from functools import lru_cache
+
 from app.services.nl_segmentation.service import NLSegmentationService
 
-nl_service = NLSegmentationService()
+
+@lru_cache(maxsize=1)
+def _get_nl_service() -> NLSegmentationService:
+    return NLSegmentationService()
 
 
 @router.post("/nl/query")
@@ -347,7 +352,7 @@ async def nl_segment_query(payload: dict):
     brand_code = payload.get("brand_code", "spencers")
     execute = payload.get("execute", True)
 
-    result = await nl_service.query(
+    result = await _get_nl_service().query(
         nl_query=nl_query,
         brand_code=brand_code,
         execute=execute,
@@ -362,7 +367,7 @@ async def nl_suggest(payload: dict):
     if not partial:
         return {"suggestions": []}
 
-    suggestions = await nl_service.suggest(partial)
+    suggestions = await _get_nl_service().suggest(partial)
     return {"suggestions": suggestions}
 
 
@@ -373,5 +378,5 @@ async def nl_explain_rules(payload: dict):
     if not rules:
         raise HTTPException(status_code=400, detail="Rules are required")
 
-    explanation = await nl_service.explain(rules)
+    explanation = await _get_nl_service().explain(rules)
     return {"explanation": explanation}

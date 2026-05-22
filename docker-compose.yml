@@ -16,7 +16,7 @@ services:
       - pgdata:/var/lib/postgresql/data
       - ./dwh/sql:/docker-entrypoint-initdb.d
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U cdp"]
+      test: ["CMD-SHELL", "pg_isready -U cdp -d cdp_meta"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -48,16 +48,20 @@ services:
       CDP_REDIS_URL: redis://redis:6379/0
       CDP_DEBUG: "true"
       CDP_AWS_REGION: ap-south-1
-      # Spencer's DWH connection (same PG instance, used by PgCompiler)
+      # Spencer's DWH connection (Docker postgres)
       PG_HOST: postgres
       PG_PORT: "5432"
       PG_DB: cdp_meta
       PG_USER: cdp
       PG_PASSWORD: cdp
-      # AWS credentials
-      # CDP_AWS_ACCESS_KEY_ID: ...
-      # CDP_AWS_SECRET_ACCESS_KEY: ...
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      # AWS credentials — mapped to the standard names boto3 expects
+      AWS_ACCESS_KEY_ID: ${CDP_AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${CDP_AWS_SECRET_ACCESS_KEY:-}
+      # ---------------------------------------------------------------
+      # NL Segmentation — AWS Bedrock
+      # ---------------------------------------------------------------
+      BEDROCK_MODEL_ID: ${BEDROCK_MODEL_ID:-apac.anthropic.claude-3-haiku-20240307-v1:0}
+      BEDROCK_REGION: ${BEDROCK_REGION:-ap-south-1}
     depends_on:
       postgres:
         condition: service_healthy

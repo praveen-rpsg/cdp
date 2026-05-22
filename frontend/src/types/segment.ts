@@ -44,7 +44,8 @@ export type AttributeCategory =
   | "utility_complaint"
   | "digital_adoption"
   | "customer_experience"
-  | "bill_transaction";
+  | "bill_transaction"
+  | "cross_brand";
 
 export interface AttributeDefinition {
   key: string;
@@ -350,6 +351,7 @@ export const CATEGORY_CONFIG: Record<
   utility_complaint: { label: "Complaints / Service", icon: "alert-triangle", color: "#ea580c" },
   digital_adoption: { label: "Digital Adoption", icon: "wifi", color: "#7c3aed" },
   customer_experience: { label: "Customer Experience", icon: "heart", color: "#e11d48" },
+  cross_brand: { label: "Cross-Brand (RPSG)", icon: "globe", color: "#7B2D8B" },
 };
 
 // Rankable numeric attributes for Spencer's (per Resulticks attribute design)
