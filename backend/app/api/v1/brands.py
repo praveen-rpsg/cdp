@@ -44,6 +44,16 @@ BRANDS = [
         "business_model": "grocery",
         "is_active": True,
     },
+    {
+        "id": "brand-corporate-005",
+        "code": "corporate",
+        "name": "Corporate",
+        "channels": ["b2c", "ecom", "d2c"],
+        "business_model": "corporate",
+        "is_active": True,
+        "is_cross_brand": True,
+        "description": "Cross-brand view — Spencers + Nature's Basket combined via silver_corp_customer_attributes",
+    },
 ]
 
 
