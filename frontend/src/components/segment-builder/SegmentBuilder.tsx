@@ -9,6 +9,7 @@ import {
 import type { SetOperationType } from "../../types/segment";
 import { ConditionGroupUI } from "./ConditionGroupUI";
 import AudienceSummaryPanel from "./AudienceSummaryPanel";
+import AudiencePreviewPanel from "./AudiencePreviewPanel";
 import { NLSegmentPanel } from "./NLSegmentPanel";
 
 /* ── Toast ─────────────────────────────────────────────────── */
@@ -686,6 +687,8 @@ export const SegmentBuilder: React.FC = () => {
             </div>
 
             <AudienceSummaryPanel />
+
+            <AudiencePreviewPanel />
 
             {/* Attribute categories */}
             <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">

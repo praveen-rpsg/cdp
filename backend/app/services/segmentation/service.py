@@ -124,6 +124,63 @@ async def close_resources() -> None:
         await _redis.aclose()
 
 
+_PROPENSITY_TABLE_DDL = """
+CREATE SCHEMA IF NOT EXISTS silver_reverse_etl;
+CREATE SCHEMA IF NOT EXISTS nb_silver_reverse_etl;
+
+CREATE TABLE IF NOT EXISTS silver_reverse_etl.customer_propensity_scores_spencers (
+    customer_id                                          TEXT        NOT NULL PRIMARY KEY,
+    spencers_segment_1_propensity                        NUMERIC(6,4),
+    spencers_segment_2_propensity                        NUMERIC(6,4),
+    spencers_segment_3_propensity                        NUMERIC(6,4),
+    spencers_segment_4_propensity                        NUMERIC(6,4),
+    spencers_segment_5_propensity                        NUMERIC(6,4),
+    spencers_segment_6_propensity                        NUMERIC(6,4),
+    spencers_segment_1_normalized_propensity             NUMERIC(6,4),
+    spencers_segment_2_normalized_propensity             NUMERIC(6,4),
+    spencers_segment_3_normalized_propensity             NUMERIC(6,4),
+    spencers_segment_4_normalized_propensity             NUMERIC(6,4),
+    spencers_segment_5_normalized_propensity             NUMERIC(6,4),
+    spencers_segment_6_normalized_propensity             NUMERIC(6,4),
+    model_run_date                                       DATE         DEFAULT CURRENT_DATE,
+    updated_at                                           TIMESTAMPTZ  DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS nb_silver_reverse_etl.customer_propensity_scores_nbl (
+    customer_id                                          TEXT        NOT NULL PRIMARY KEY,
+    nbl_segment_1_propensity                             NUMERIC(6,4),
+    nbl_segment_2_propensity                             NUMERIC(6,4),
+    nbl_segment_3_propensity                             NUMERIC(6,4),
+    nbl_segment_4_propensity                             NUMERIC(6,4),
+    nbl_segment_1_normalized_propensity                  NUMERIC(6,4),
+    nbl_segment_2_normalized_propensity                  NUMERIC(6,4),
+    nbl_segment_3_normalized_propensity                  NUMERIC(6,4),
+    nbl_segment_4_normalized_propensity                  NUMERIC(6,4),
+    model_run_date                                       DATE         DEFAULT CURRENT_DATE,
+    updated_at                                           TIMESTAMPTZ  DEFAULT NOW()
+);
+"""
+
+
+async def ensure_propensity_tables() -> None:
+    """
+    Create propensity score tables if they don't exist.
+    Called at startup so affinity attributes are always queryable — even before
+    the first model run (all scores will be NULL until populated).
+    """
+    pool = _pg_pool
+    if pool is None:
+        logger.warning("Skipping propensity table init — pool not available")
+        return
+    try:
+        async with pool.connection() as conn:
+            await conn.execute(_PROPENSITY_TABLE_DDL)
+            await conn.commit()
+        logger.info("Propensity score tables verified/created")
+    except Exception as exc:
+        logger.warning("Could not create propensity tables: %s", exc)
+
+
 def _cache_key(prefix: str, sql: str) -> str:
     digest = hashlib.sha256(sql.encode()).hexdigest()
     return f"cdp:{prefix}:{digest}"
@@ -503,18 +560,20 @@ class SegmentationService:
 
     _ALIAS_TO_TABLE_BY_BRAND: dict[str, dict[str, str]] = {
         "spencers": {
-            "p":   "silver_identity.unified_profiles",
-            "ba":  "silver_reverse_etl.customer_behavioral_attributes",
-            "gs":  "silver_identity.identity_graph_summary",
-            "loc": "bronze.raw_location_master",
-            "bt":  "silver.s_fact_bill_transactions",
+            "p":    "silver_identity.unified_profiles",
+            "ba":   "silver_reverse_etl.customer_behavioral_attributes",
+            "gs":   "silver_identity.identity_graph_summary",
+            "loc":  "bronze.raw_location_master",
+            "bt":   "silver.s_fact_bill_transactions",
+            "prop": "silver_reverse_etl.customer_propensity_scores_spencers",
         },
         "natures_basket": {
-            "p":   "nb_silver_identity.unified_profiles",
-            "ba":  "nb_silver_reverse_etl.customer_behavioral_attributes",
-            "gs":  "nb_silver_identity.identity_graph_summary",
-            "loc": "nb_bronze.raw_location_master",
-            "bt":  "nb_silver.s_fact_bill_transactions",
+            "p":    "nb_silver_identity.unified_profiles",
+            "ba":   "nb_silver_reverse_etl.customer_behavioral_attributes",
+            "gs":   "nb_silver_identity.identity_graph_summary",
+            "loc":  "nb_bronze.raw_location_master",
+            "bt":   "nb_silver.s_fact_bill_transactions",
+            "prop": "nb_silver_reverse_etl.customer_propensity_scores_nbl",
         },
         # Corporate cross-brand view — single flat table, alias "corp"
         "corporate": {

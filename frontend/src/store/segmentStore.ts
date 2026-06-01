@@ -73,6 +73,18 @@ interface SegmentBuilderState {
   isFetchingCatalog: boolean;
   compiledSQL: string | null;
 
+  // Audience preview (sample customer rows)
+  previewProfiles: Record<string, any>[];
+  isPreviewing: boolean;
+
+  // Deep-link handoff to Customer Single View
+  pendingSingleView: { mobile: string; brand: string | null } | null;
+  setPendingSingleView: (v: { mobile: string; brand: string | null } | null) => void;
+
+  // Deep-link handoff to Corporate Single View
+  pendingCorporateView: { mobile: string; r1_id: string | null } | null;
+  setPendingCorporateView: (v: { mobile: string; r1_id: string | null } | null) => void;
+
   // Rank & Split
   rankConfig: RankConfig;
   splitConfig: SplitConfig;
@@ -130,6 +142,7 @@ interface SegmentBuilderState {
   estimateAudience: () => Promise<void>;
   fetchSummary: () => Promise<void>;
   fetchCatalog: () => Promise<void>;
+  previewAudience: () => Promise<void>;
 }
 
 function findAndMutate(
@@ -179,6 +192,12 @@ export const useSegmentStore = create<SegmentBuilderState>((set, get) => ({
   isFetchingSummary: false,
   isFetchingCatalog: false,
   compiledSQL: null,
+  previewProfiles: [],
+  isPreviewing: false,
+  pendingSingleView: null,
+  setPendingSingleView: (v) => set({ pendingSingleView: v }),
+  pendingCorporateView: null,
+  setPendingCorporateView: (v) => set({ pendingCorporateView: v }),
   isDirty: false,
 
   // Rank & Split defaults
@@ -449,6 +468,30 @@ export const useSegmentStore = create<SegmentBuilderState>((set, get) => ({
     } catch (err) {
       console.error("Failed to fetch attribute catalog:", err);
       set({ isFetchingCatalog: false, catalogLoaded: false });
+    }
+  },
+
+  previewAudience: async () => {
+    const { selectedBrandCode, isPreviewing, getSegmentDefinition } = get();
+    if (!selectedBrandCode || isPreviewing) return;
+
+    set({ isPreviewing: true, previewProfiles: [] });
+
+    try {
+      const response = await fetch("/api/v1/segments/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          brand_code: selectedBrandCode,
+          rules: getSegmentDefinition(),
+          limit: 50,
+        }),
+      });
+      const data = await response.json();
+      set({ previewProfiles: data.profiles || [], isPreviewing: false });
+    } catch (err) {
+      console.error("Failed to preview audience:", err);
+      set({ isPreviewing: false });
     }
   },
 }));
