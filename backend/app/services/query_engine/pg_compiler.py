@@ -236,6 +236,72 @@ SPENCERS_SCHEMA_MAP = {
     "bt.promo_indicator": "bt.promo_indicator",
     "bt.day_of_week": "bt.day_of_week",
     "bt.mobile_number": "bt.mobile_number",
+
+    # ── Propensity / Segment Affinity  (alias: prop = customer_propensity_scores) ──
+    # Spencer's raw scores
+    "affinity.spencers_fashion_cb_propensity":              "prop.spencers_segment_1_propensity",
+    "affinity.spencers_food_propensity":                    "prop.spencers_segment_2_propensity",
+    "affinity.spencers_gm_propensity":                      "prop.spencers_segment_3_propensity",
+    "affinity.spencers_hi_tech_propensity":                 "prop.spencers_segment_4_propensity",
+    "affinity.spencers_non_trade_propensity":               "prop.spencers_segment_5_propensity",
+    "affinity.spencers_non_food_grocery_propensity":        "prop.spencers_segment_6_propensity",
+    # Spencer's normalized scores
+    "affinity.spencers_fashion_cb_propensity_normalized":         "prop.spencers_segment_1_normalized_propensity",
+    "affinity.spencers_food_propensity_normalized":               "prop.spencers_segment_2_normalized_propensity",
+    "affinity.spencers_gm_propensity_normalized":                 "prop.spencers_segment_3_normalized_propensity",
+    "affinity.spencers_hi_tech_propensity_normalized":            "prop.spencers_segment_4_normalized_propensity",
+    "affinity.spencers_non_trade_propensity_normalized":          "prop.spencers_segment_5_normalized_propensity",
+    "affinity.spencers_non_food_grocery_propensity_normalized":   "prop.spencers_segment_6_normalized_propensity",
+    # NBL raw scores
+    "affinity.nbl_food_propensity":                         "prop.nbl_segment_1_propensity",
+    "affinity.nbl_gm_propensity":                           "prop.nbl_segment_2_propensity",
+    "affinity.nbl_non_trade_propensity":                    "prop.nbl_segment_3_propensity",
+    "affinity.nbl_non_food_grocery_propensity":             "prop.nbl_segment_4_propensity",
+    # NBL normalized scores
+    "affinity.nbl_food_propensity_normalized":              "prop.nbl_segment_1_normalized_propensity",
+    "affinity.nbl_gm_propensity_normalized":                "prop.nbl_segment_2_normalized_propensity",
+    "affinity.nbl_non_trade_propensity_normalized":         "prop.nbl_segment_3_normalized_propensity",
+    "affinity.nbl_non_food_grocery_propensity_normalized":  "prop.nbl_segment_4_normalized_propensity",
+
+    # ── Dominant affinity (argmax of normalized scores) ──
+    "affinity.spencers_dominant_segment_score": (
+        "GREATEST(prop.spencers_segment_1_normalized_propensity, "
+        "prop.spencers_segment_2_normalized_propensity, "
+        "prop.spencers_segment_3_normalized_propensity, "
+        "prop.spencers_segment_4_normalized_propensity, "
+        "prop.spencers_segment_5_normalized_propensity, "
+        "prop.spencers_segment_6_normalized_propensity)"
+    ),
+    "affinity.spencers_dominant_segment": (
+        "CASE GREATEST(prop.spencers_segment_1_normalized_propensity, "
+        "prop.spencers_segment_2_normalized_propensity, "
+        "prop.spencers_segment_3_normalized_propensity, "
+        "prop.spencers_segment_4_normalized_propensity, "
+        "prop.spencers_segment_5_normalized_propensity, "
+        "prop.spencers_segment_6_normalized_propensity) "
+        "WHEN prop.spencers_segment_1_normalized_propensity THEN 'FASHION CB' "
+        "WHEN prop.spencers_segment_2_normalized_propensity THEN 'FOOD' "
+        "WHEN prop.spencers_segment_3_normalized_propensity THEN 'GM' "
+        "WHEN prop.spencers_segment_4_normalized_propensity THEN 'HI TECH' "
+        "WHEN prop.spencers_segment_5_normalized_propensity THEN 'NON TRADE' "
+        "WHEN prop.spencers_segment_6_normalized_propensity THEN 'NON FOOD GROCERY' END"
+    ),
+    "affinity.nbl_dominant_segment_score": (
+        "GREATEST(prop.nbl_segment_1_normalized_propensity, "
+        "prop.nbl_segment_2_normalized_propensity, "
+        "prop.nbl_segment_3_normalized_propensity, "
+        "prop.nbl_segment_4_normalized_propensity)"
+    ),
+    "affinity.nbl_dominant_segment": (
+        "CASE GREATEST(prop.nbl_segment_1_normalized_propensity, "
+        "prop.nbl_segment_2_normalized_propensity, "
+        "prop.nbl_segment_3_normalized_propensity, "
+        "prop.nbl_segment_4_normalized_propensity) "
+        "WHEN prop.nbl_segment_1_normalized_propensity THEN 'FOOD' "
+        "WHEN prop.nbl_segment_2_normalized_propensity THEN 'GM' "
+        "WHEN prop.nbl_segment_3_normalized_propensity THEN 'NON TRADE' "
+        "WHEN prop.nbl_segment_4_normalized_propensity THEN 'NON FOOD GROCERY' END"
+    ),
 }
 
 
@@ -250,6 +316,7 @@ BRAND_SCHEMA_CONFIG: dict[str, dict[str, str]] = {
         "identity_graph_summary":          "silver_identity.identity_graph_summary",
         "raw_location_master":             "bronze.raw_location_master",
         "s_fact_bill_transactions":        "silver.s_fact_bill_transactions",
+        "customer_propensity_scores":      "silver_reverse_etl.customer_propensity_scores_spencers",
     },
     "natures_basket": {
         "unified_profiles":                "nb_silver_identity.unified_profiles",
@@ -257,6 +324,7 @@ BRAND_SCHEMA_CONFIG: dict[str, dict[str, str]] = {
         "identity_graph_summary":          "nb_silver_identity.identity_graph_summary",
         "raw_location_master":             "nb_bronze.raw_location_master",
         "s_fact_bill_transactions":        "nb_silver.s_fact_bill_transactions",
+        "customer_propensity_scores":      "nb_silver_reverse_etl.customer_propensity_scores_nbl",
     },
 }
 
@@ -456,6 +524,7 @@ class PgCompiler:
         self._tbl_gs        = cfg["identity_graph_summary"]
         self._tbl_loc       = cfg["raw_location_master"]
         self._tbl_bt        = cfg["s_fact_bill_transactions"]
+        self._tbl_prop      = cfg.get("customer_propensity_scores", "")
         self._cte_counter = 0
         self._ctes: list[str] = []
         self._extra_joins: list[str] = []
@@ -463,6 +532,7 @@ class PgCompiler:
         self._needs_gs = False
         self._needs_loc = False
         self._needs_nps = False
+        self._needs_prop = False
 
     def _reset(self):
         self._cte_counter = 0
@@ -472,6 +542,7 @@ class PgCompiler:
         self._needs_gs = False
         self._needs_loc = False
         self._needs_nps = False
+        self._needs_prop = False
 
     def compile(self, definition: SegmentDefinition) -> str:
         """Compile a full segment definition into PostgreSQL SQL."""
@@ -526,8 +597,11 @@ class PgCompiler:
         """Compile a preview query returning sample profiles."""
         self._reset()
         where_clause = self._compile_group(definition.root)
+        # DISTINCT dedupes identical rows that a one-to-many JOIN (ba/gs/loc)
+        # can produce — all selected columns come from the profile table, so
+        # genuine duplicates are fully identical.
         select = (
-            "p.unified_id AS customer_id,\n"
+            "DISTINCT p.unified_id AS customer_id,\n"
             "  p.canonical_mobile AS mobile,\n"
             "  p.display_name AS name,\n"
             "  p.email,\n"
@@ -553,6 +627,8 @@ class PgCompiler:
             self._needs_gs = True
         if "loc." in combined:
             self._needs_loc = True
+        if "prop." in combined:
+            self._needs_prop = True
 
         parts = []
 
@@ -578,6 +654,11 @@ class PgCompiler:
             parts.append(
                 f"INNER JOIN {self._tbl_loc} loc "
                 "ON TRIM(loc.store_code) = TRIM(p.registered_store)"
+            )
+        if self._needs_prop and self._tbl_prop:
+            parts.append(
+                f"LEFT JOIN {self._tbl_prop} prop "
+                "ON prop.customer_id = p.unified_id"
             )
 
         # Extra CTE-based JOINs
@@ -648,6 +729,9 @@ class PgCompiler:
         # BT (bill transaction) attributes use EXISTS subqueries against line-item data
         if cond.attribute_key.startswith("bt."):
             return self._compile_bt_attribute(cond)
+        # Affinity attributes require the propensity scores table — skip gracefully if not configured
+        if cond.attribute_key.startswith("affinity.") and not self._tbl_prop:
+            return "1=0"
         col = self._resolve_column(cond.attribute_key)
         sql = self._operator_to_sql(col, cond.operator, cond.value, cond.second_value)
         if cond.negate:
@@ -761,6 +845,8 @@ class PgCompiler:
                 self._needs_gs = True
             elif col.startswith("loc."):
                 self._needs_loc = True
+            elif col.startswith("prop."):
+                self._needs_prop = True
             return col
 
         # Default: derive from key
@@ -1051,7 +1137,7 @@ class CorporatePgCompiler(PgCompiler):
         self._reset()
         where_clause = self._compile_group(definition.root)
         select = (
-            "corp.r1_id AS customer_id,\n"
+            "DISTINCT corp.r1_id AS customer_id,\n"
             "  corp.mobile,\n"
             "  COALESCE(corp.spn_display_name, corp.nbl_display_name) AS name,\n"
             "  COALESCE(corp.spn_email, corp.nbl_email) AS email,\n"
@@ -1115,27 +1201,57 @@ class CorporatePgCompiler(PgCompiler):
 
     def _compile_attribute(self, cond) -> str:
         """
-        Override to intercept rpsg_brand_presence with contains/not_contains,
-        which must use ILIKE '%value%' against the Python-list-repr text column.
+        Override to intercept rpsg_brand_presence.
+        The column stores a Python list repr like "['Spencer' 'NBL']", so
+        brand membership must use ILIKE '%value%' regardless of the UI operator
+        name (the frontend now uses equals/not_equals for the dropdown).
         All other attribute conditions fall through to the parent implementation.
         """
         col = self._resolve_column(cond.attribute_key)
         if col == "corp.rpsg_brand_presence":
-            val = str(cond.value or "").replace("'", "''")
-            if cond.operator == "contains":
-                sql = f"corp.rpsg_brand_presence ILIKE '%{val}%'"
-            elif cond.operator == "not_contains":
-                sql = f"(corp.rpsg_brand_presence NOT ILIKE '%{val}%' OR corp.rpsg_brand_presence IS NULL)"
-            elif cond.operator in ("exists", "not_exists"):
-                sql = (
-                    "corp.rpsg_brand_presence IS NOT NULL"
-                    if cond.operator == "exists"
-                    else "corp.rpsg_brand_presence IS NULL"
-                )
+            # Normalise value: dropdown sends a list; direct input sends a string.
+            raw = cond.value
+            values: list[str] = (
+                [str(v) for v in raw if v] if isinstance(raw, list)
+                else ([str(raw)] if raw else [])
+            )
+
+            def _esc(v: str) -> str:
+                return v.replace("'", "''")
+
+            if cond.operator in ("equals", "contains", "in_list"):
+                # Any selected brand must appear in the stored list repr
+                if not values:
+                    sql = "1=0"
+                elif len(values) == 1:
+                    sql = f"corp.rpsg_brand_presence ILIKE '%{_esc(values[0])}%'"
+                else:
+                    parts = " OR ".join(
+                        f"corp.rpsg_brand_presence ILIKE '%{_esc(v)}%'" for v in values
+                    )
+                    sql = f"({parts})"
+
+            elif cond.operator in ("not_equals", "not_contains", "not_in_list"):
+                # None of the selected brands must appear
+                if not values:
+                    sql = "1=1"
+                elif len(values) == 1:
+                    sql = f"(corp.rpsg_brand_presence NOT ILIKE '%{_esc(values[0])}%' OR corp.rpsg_brand_presence IS NULL)"
+                else:
+                    parts = " AND ".join(
+                        f"corp.rpsg_brand_presence NOT ILIKE '%{_esc(v)}%'" for v in values
+                    )
+                    sql = f"(({parts}) OR corp.rpsg_brand_presence IS NULL)"
+
+            elif cond.operator == "exists":
+                sql = "corp.rpsg_brand_presence IS NOT NULL"
+            elif cond.operator == "not_exists":
+                sql = "corp.rpsg_brand_presence IS NULL"
             else:
-                # equals / other ops: warn and fall back to ILIKE exact match
-                escaped = str(cond.value or "").replace("'", "''")
-                sql = f"corp.rpsg_brand_presence ILIKE '{escaped}'"
+                # Fallback: treat like equals
+                val = _esc(values[0]) if values else ""
+                sql = f"corp.rpsg_brand_presence ILIKE '%{val}%'"
+
             return f"(NOT ({sql}))" if getattr(cond, "negate", False) else sql
         return super()._compile_attribute(cond)
 
