@@ -27,7 +27,8 @@ interface SingleView {
     dominant_segment_score: number | null;
   } | null;
   spend_trend: { month: string; spend: number }[];
-  location_propensity: { store: string; segment: string; spend: number }[];
+  top_articles: { article: string; segment: string | null; spend: number }[];
+  location_propensity: { segment: string; spend: number; share_pct: number; normalized_score: number }[];
 }
 
 const SEGMENT_COLORS: Record<string, string> = {
@@ -62,6 +63,61 @@ const Field: React.FC<{ label: string; value: React.ReactNode }> = ({ label, val
     <span className="font-medium text-gray-800 text-right truncate">{value ?? "—"}</span>
   </div>
 );
+
+/* ── Channel Split / Omnichannel table ─────────────────────── */
+const ChannelSplitTable: React.FC<{ b: Record<string, any> }> = ({ b }) => {
+  const online = b.online_spend ?? 0;
+  const store = b.store_spend ?? 0;
+  const total = online + store;
+  const onlineBills = b.online_bills ?? null;
+  const storeBills = b.store_bills ?? null;
+  const totalBills = b.total_bills ?? null;
+  const share = (v: number) => (total > 0 ? ((v / total) * 100).toFixed(1) + "%" : "—");
+
+  const rows = [
+    { label: "Online", bills: onlineBills, spend: online, share: share(online), accent: "#2563eb" },
+    { label: "Offline (Store)", bills: storeBills, spend: store, share: share(store), accent: "#ea580c" },
+  ];
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 pt-4 pb-2 flex items-center gap-2">
+        🛒 Omnichannel Profile
+      </h3>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="bg-slate-800 text-white text-xs uppercase tracking-wider">
+            <th className="py-2.5 px-4 text-left font-semibold">Channel</th>
+            <th className="py-2.5 px-4 text-right font-semibold">Bills</th>
+            <th className="py-2.5 px-4 text-right font-semibold">Spend</th>
+            <th className="py-2.5 px-4 text-right font-semibold">Share</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.label} className="border-b border-gray-100">
+              <td className="py-2.5 px-4 font-medium text-gray-800">
+                <span className="inline-flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: r.accent }} />
+                  {r.label}
+                </span>
+              </td>
+              <td className="py-2.5 px-4 text-right tabular-nums text-gray-600">{fmtNum(r.bills)}</td>
+              <td className="py-2.5 px-4 text-right tabular-nums text-gray-700">{fmtINR(r.spend)}</td>
+              <td className="py-2.5 px-4 text-right tabular-nums font-semibold text-gray-800">{r.share}</td>
+            </tr>
+          ))}
+          <tr className="bg-gray-50">
+            <td className="py-2.5 px-4 font-bold text-gray-900">Combined</td>
+            <td className="py-2.5 px-4 text-right tabular-nums font-bold text-gray-900">{fmtNum(totalBills)}</td>
+            <td className="py-2.5 px-4 text-right tabular-nums font-bold text-gray-900">{fmtINR(total)}</td>
+            <td className="py-2.5 px-4 text-right tabular-nums font-bold text-gray-900">{total > 0 ? "100%" : "—"}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+};
 
 /* ══════════════════════════════════════════════════════════════ */
 export const CustomerSingleView: React.FC = () => {
@@ -193,7 +249,6 @@ export const CustomerSingleView: React.FC = () => {
               <Field label="Age" value={id.age} />
               <Field label="City" value={id.city} />
               <Field label="Pincode" value={id.pincode} />
-              <Field label="Registered Store" value={id.registered_store} />
               <Field label="Customer Group" value={id.customer_group} />
               <Field label="Source" value={id.primary_source} />
             </Card>
@@ -208,26 +263,28 @@ export const CustomerSingleView: React.FC = () => {
               <Field label="Spend / Bill" value={fmtINR(b.spend_per_bill)} />
               <Field label="Spend Decile" value={b.spend_decile} />
               <Field label="Lifecycle" value={b.lifecycle_stage} />
-              <Field label="Fav Store" value={b.fav_store_name} />
+              <Field
+                label="Fav Store"
+                value={
+                  b.fav_store_name
+                    ? `${b.fav_store_name}${id.registered_store ? ` (${id.registered_store})` : ""}`
+                    : id.registered_store || "—"
+                }
+              />
               <Field label="Fav Day" value={b.fav_day} />
-              <Field label="Fav Article (spend)" value={b.fav_article_by_spend_desc} />
             </Card>
 
-            <div className="space-y-5">
-              <Card title="Reachability" icon="📡">
-                <Field label="DND" value={r.dnd} />
-                <Field label="Email Opt-In" value={r.accepts_email_marketing} />
-                <Field label="SMS Opt-In" value={r.accepts_sms_marketing} />
-                <Field label="WhatsApp" value={r.whatsapp} />
-              </Card>
-              <Card title="Channel Split" icon="🛒">
-                <Field label="Store Spend" value={fmtINR(b.store_spend)} />
-                <Field label="Online Spend" value={fmtINR(b.online_spend)} />
-                <Field label="Store Bills" value={fmtNum(b.store_bills)} />
-                <Field label="Online Bills" value={fmtNum(b.online_bills)} />
-              </Card>
-            </div>
+            <Card title="Reachability" icon="📡">
+              <Field label="DND" value={r.dnd} />
+              <Field label="Email Opt-In" value={r.accepts_email_marketing} />
+              <Field label="SMS Opt-In" value={r.accepts_sms_marketing} />
+              <Field label="WhatsApp" value={r.whatsapp} />
+              <Field label="Channel Presence" value={b.channel_presence} />
+            </Card>
           </div>
+
+          {/* Omnichannel / Channel Split */}
+          <ChannelSplitTable b={b} />
 
           {/* Row 2: Brand Propensity + Category Propensity */}
           {prop && prop.segments.length > 0 && (
@@ -293,36 +350,83 @@ export const CustomerSingleView: React.FC = () => {
             </div>
           )}
 
-          {/* Row 3: Location propensity */}
-          {data.location_propensity.length > 0 && (
-            <Card title="Location Category Propensity" icon="📍">
-              <div className="max-h-64 overflow-y-auto">
+          {/* Row 3: Top Articles + Category spend */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            {data.top_articles.length > 0 && (
+              <Card title="Top 10 Articles (by Spend)" icon="🏆">
+                <div className="max-h-72 overflow-y-auto">
+                  <table className="w-full text-xs">
+                    <thead className="text-gray-400 uppercase tracking-wider sticky top-0 bg-white">
+                      <tr className="border-b border-gray-100">
+                        <th className="py-1.5 text-left w-6">#</th>
+                        <th className="py-1.5 text-left">Article (Segment)</th>
+                        <th className="py-1.5 text-right">Spend</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.top_articles.map((a, i) => (
+                        <tr key={i} className="border-b border-gray-50">
+                          <td className="py-1.5 text-gray-400">{i + 1}</td>
+                          <td className="py-1.5">
+                            <span className="text-gray-800">{a.article}</span>
+                            {a.segment && (
+                              <span
+                                className="ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-medium text-white align-middle"
+                                style={{ backgroundColor: SEGMENT_COLORS[a.segment] || "#94a3b8" }}
+                              >
+                                {a.segment}
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-1.5 text-right tabular-nums whitespace-nowrap">{fmtINR(a.spend)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            )}
+
+            {data.location_propensity.length > 0 && (
+              <Card title="Location Category Propensity" icon="📍">
                 <table className="w-full text-xs">
-                  <thead className="text-gray-400 uppercase tracking-wider sticky top-0 bg-white">
+                  <thead className="text-gray-400 uppercase tracking-wider">
                     <tr className="border-b border-gray-100">
-                      <th className="py-1.5 text-left">Store</th>
                       <th className="py-1.5 text-left">Segment</th>
                       <th className="py-1.5 text-right">Spend</th>
+                      <th className="py-1.5 text-right">% Share</th>
+                      <th className="py-1.5 text-left pl-3 w-1/3">Normalized</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {data.location_propensity.map((c, i) => (
-                      <tr key={i} className="border-b border-gray-50">
-                        <td className="py-1.5 truncate max-w-[200px]" title={c.store}>{c.store}</td>
-                        <td className="py-1.5">
-                          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium text-white"
-                            style={{ backgroundColor: SEGMENT_COLORS[c.segment] || "#94a3b8" }}>
-                            {c.segment}
-                          </span>
-                        </td>
-                        <td className="py-1.5 text-right tabular-nums">{fmtINR(c.spend)}</td>
-                      </tr>
-                    ))}
+                    {data.location_propensity.map((c, i) => {
+                      const color = SEGMENT_COLORS[c.segment] || "#94a3b8";
+                      return (
+                        <tr key={i} className="border-b border-gray-50">
+                          <td className="py-1.5">
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium text-white"
+                              style={{ backgroundColor: color }}>
+                              {c.segment}
+                            </span>
+                          </td>
+                          <td className="py-1.5 text-right tabular-nums whitespace-nowrap">{fmtINR(c.spend)}</td>
+                          <td className="py-1.5 text-right tabular-nums">{c.share_pct.toFixed(1)}%</td>
+                          <td className="py-1.5 pl-3">
+                            <div className="flex items-center gap-2">
+                              <div className="flex-1 h-2 bg-gray-100 rounded overflow-hidden">
+                                <div className="h-full rounded" style={{ width: `${c.normalized_score * 100}%`, backgroundColor: color }} />
+                              </div>
+                              <span className="w-8 text-right tabular-nums text-gray-600">{c.normalized_score.toFixed(2)}</span>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
-              </div>
-            </Card>
-          )}
+              </Card>
+            )}
+          </div>
         </>
       )}
     </div>
