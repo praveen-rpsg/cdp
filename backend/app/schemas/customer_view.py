@@ -92,10 +92,18 @@ class SpendTrendPoint(BaseModel):
     spend: float
 
 
-class LocationPropensityCell(BaseModel):
-    store: str
+class TopArticle(BaseModel):
+    article: str
+    segment: str | None = None
+    spend: float
+
+
+class CategorySpend(BaseModel):
+    """Actual transaction spend rolled up per product segment."""
     segment: str
     spend: float
+    share_pct: float          # spend / total spend * 100
+    normalized_score: float   # spend / max segment spend (0–1)
 
 
 class CustomerSingleViewResponse(BaseModel):
@@ -106,7 +114,8 @@ class CustomerSingleViewResponse(BaseModel):
     reachability: ReachabilityBlock | None = None
     propensity: PropensityBlock | None = None
     spend_trend: list[SpendTrendPoint] = []
-    location_propensity: list[LocationPropensityCell] = []
+    top_articles: list[TopArticle] = []
+    location_propensity: list[CategorySpend] = []
 
 
 # =============================================================================
@@ -150,9 +159,42 @@ class BrandPanel(BaseModel):
     accepts_sms_marketing: str | None = None
 
 
+class TimelineEvent(BaseModel):
+    date: str                  # 'YYYY-MM-DD'
+    brand: str                 # "Spencer's" | "Nature's Basket"
+    type: str = "Purchase"
+    store: str | None = None
+    segment: str | None = None
+    spend: float | None = None
+
+
+class CorporateInsights(BaseModel):
+    lifetime_value: float | None = None
+    preferred_brand: str | None = None
+    preferred_category: str | None = None
+    preferred_channel: str | None = None
+
+
+class CorporateMetrics(BaseModel):
+    num_rpsg_brands: int | None = None
+    avg_basket_value: float | None = None       # combined spend / combined bills
+    return_pct: float | None = None             # combined return bills / total bills
+    # RFM / decile / segment come from the customer's preferred (higher-spend) brand
+    rfm_brand: str | None = None
+    rfm_recency: int | None = None
+    rfm_frequency: int | None = None
+    rfm_monetary: int | None = None
+    spend_decile: int | None = None
+    segment: str | None = None
+    lifecycle_stage: str | None = None
+
+
 class CorporateSingleViewResponse(BaseModel):
     found: bool
     brand_code: str = "corporate"
     identity: CorporateIdentityBlock | None = None
+    insights: CorporateInsights | None = None
+    metrics: CorporateMetrics | None = None
+    activity_timeline: list[TimelineEvent] = []
     spencers: BrandPanel | None = None
     nbl: BrandPanel | None = None

@@ -15,17 +15,21 @@ import logging
 from app.schemas.customer_view import (
     BehavioralBlock,
     BrandPanel,
+    CategorySpend,
     CorporateIdentityBlock,
+    CorporateInsights,
+    CorporateMetrics,
     CorporateSingleViewResponse,
     CustomerSingleViewResponse,
     IdentityBlock,
-    LocationPropensityCell,
     PropensityBlock,
     ReachabilityBlock,
     SegmentScore,
     SpendTrendPoint,
+    TimelineEvent,
+    TopArticle,
 )
-from app.services.query_engine.pg_compiler import CORPORATE_TABLE
+from app.services.query_engine.pg_compiler import BRAND_SCHEMA_CONFIG, CORPORATE_TABLE
 from app.services.query_engine.pg_compiler import BRAND_SCHEMA_CONFIG
 from app.services import segmentation as _seg_pkg  # noqa: F401  (ensures module import)
 import app.services.segmentation.service as _seg_mod
@@ -199,12 +203,14 @@ class CustomerViewService:
         # ── Propensity ──────────────────────────────────────────────────────────
         propensity = await self._fetch_propensity(uid, brand_code, tbl_prop)
 
-        # ── Spend trend + location propensity (from bt, mobile-keyed) ────────────
+        # ── Trend / articles / category spend (from bt, mobile-keyed) ────────────
         spend_trend: list[SpendTrendPoint] = []
-        location_propensity: list[LocationPropensityCell] = []
+        top_articles: list[TopArticle] = []
+        category_spend: list[CategorySpend] = []
         if mobile_val:
             spend_trend = await self._fetch_spend_trend(mobile_val, tbl_bt)
-            location_propensity = await self._fetch_location_propensity(mobile_val, tbl_bt)
+            top_articles = await self._fetch_top_articles(mobile_val, tbl_bt)
+            category_spend = await self._fetch_category_spend(mobile_val, tbl_bt)
 
         return CustomerSingleViewResponse(
             found=True,
@@ -214,7 +220,8 @@ class CustomerViewService:
             reachability=reachability,
             propensity=propensity,
             spend_trend=spend_trend,
-            location_propensity=location_propensity,
+            top_articles=top_articles,
+            location_propensity=category_spend,
         )
 
     async def _fetch_propensity(
@@ -276,33 +283,63 @@ class CustomerViewService:
         pts = [SpendTrendPoint(month=r["month"], spend=_f(r["spend"]) or 0.0) for r in rows]
         return list(reversed(pts))
 
-    async def _fetch_location_propensity(
-        self, mobile: str, tbl_bt: str
-    ) -> list[LocationPropensityCell]:
+    async def _fetch_top_articles(self, mobile: str, tbl_bt: str) -> list[TopArticle]:
+        """Top 10 articles by spend, each tagged with its product segment."""
         sql = f"""
-            SELECT COALESCE(bt.store_desc, bt.store_code) AS store,
+            SELECT COALESCE(bt.article_desc, bt.article) AS article,
                    UPPER(TRIM(bt.segment_desc)) AS segment,
                    SUM(COALESCE(bt.gross_sale_value, 0)) AS spend
               FROM {tbl_bt} bt
              WHERE RIGHT(bt.mobile_number, 10) = RIGHT(%s, 10)
-               AND bt.segment_desc IS NOT NULL
+               AND COALESCE(bt.article_desc, bt.article) IS NOT NULL
              GROUP BY 1, 2
              HAVING SUM(COALESCE(bt.gross_sale_value, 0)) > 0
              ORDER BY spend DESC
-             LIMIT 60
+             LIMIT 10
         """
         try:
             rows = await self._query(sql, (mobile,))
         except Exception as e:
-            logger.warning(f"location propensity fetch failed: {e}")
+            logger.warning(f"top articles fetch failed: {e}")
             return []
         return [
-            LocationPropensityCell(
-                store=_s(r["store"]) or "—",
-                segment=_s(r["segment"]) or "—",
+            TopArticle(
+                article=_s(r["article"]) or "—",
+                segment=_s(r["segment"]),
                 spend=_f(r["spend"]) or 0.0,
             )
             for r in rows
+        ]
+
+    async def _fetch_category_spend(self, mobile: str, tbl_bt: str) -> list[CategorySpend]:
+        """Actual spend rolled up per product segment, with % share and a
+        normalized (relative-intensity) score."""
+        sql = f"""
+            SELECT UPPER(TRIM(bt.segment_desc)) AS segment,
+                   SUM(COALESCE(bt.gross_sale_value, 0)) AS spend
+              FROM {tbl_bt} bt
+             WHERE RIGHT(bt.mobile_number, 10) = RIGHT(%s, 10)
+               AND bt.segment_desc IS NOT NULL
+             GROUP BY 1
+             HAVING SUM(COALESCE(bt.gross_sale_value, 0)) > 0
+             ORDER BY spend DESC
+        """
+        try:
+            rows = await self._query(sql, (mobile,))
+        except Exception as e:
+            logger.warning(f"category spend fetch failed: {e}")
+            return []
+        spends = [(_s(r["segment"]) or "—", _f(r["spend"]) or 0.0) for r in rows]
+        total = sum(s for _, s in spends)
+        max_spend = max((s for _, s in spends), default=0.0)
+        return [
+            CategorySpend(
+                segment=seg,
+                spend=sp,
+                share_pct=(sp / total * 100.0) if total > 0 else 0.0,
+                normalized_score=(sp / max_spend) if max_spend > 0 else 0.0,
+            )
+            for seg, sp in spends
         ]
 
     # =========================================================================
@@ -328,6 +365,8 @@ class CustomerViewService:
             "spend_per_visit", "recency_days", "first_bill_date", "last_bill_date",
             "fav_store_name", "fav_day", "store_spend", "online_spend",
             "dnd", "accepts_email_marketing", "accepts_sms_marketing",
+            "spend_decile", "return_bill_count", "channel_presence",
+            "rfm_recency_score", "rfm_frequency_score", "rfm_monetary_score",
         ]
         select_cols = ["r1_id", "mobile", "rpsg_brand_presence", "rpsg_ftd", "rpsg_ltd",
                        "rpsg_tenure_lifetime", "rpsg_recency_lifetime"]
@@ -385,9 +424,122 @@ class CustomerViewService:
             is_nbl_customer=is_nbl,
         )
 
+        # ── Insights + metrics (derived from corp columns) ───────────────────────
+        spn_spend = _f(c.get("spn_total_spend")) or 0.0
+        nbl_spend = _f(c.get("nbl_total_spend")) or 0.0
+        spn_bills = _f(c.get("spn_total_bills")) or 0.0
+        nbl_bills = _f(c.get("nbl_total_bills")) or 0.0
+        total_spend = spn_spend + nbl_spend
+        total_bills = spn_bills + nbl_bills
+
+        # Preferred brand = higher lifetime spend.
+        pfx_pref = "spn" if spn_spend >= nbl_spend else "nbl"
+        pref_brand_name = "Spencer's" if pfx_pref == "spn" else "Nature's Basket"
+
+        # Preferred channel by combined store vs online spend.
+        store_sp = (_f(c.get("spn_store_spend")) or 0.0) + (_f(c.get("nbl_store_spend")) or 0.0)
+        online_sp = (_f(c.get("spn_online_spend")) or 0.0) + (_f(c.get("nbl_online_spend")) or 0.0)
+        pref_channel = None
+        if store_sp or online_sp:
+            pref_channel = "In-Store" if store_sp >= online_sp else "Online"
+
+        # Preferred category from actual transaction spend (both brands).
+        pref_category = await self._fetch_preferred_category(_s(c.get("mobile")))
+
+        insights = CorporateInsights(
+            lifetime_value=total_spend or None,
+            preferred_brand=pref_brand_name if total_spend > 0 else None,
+            preferred_category=pref_category,
+            preferred_channel=pref_channel,
+        )
+
+        ret_bills = (_f(c.get("spn_return_bill_count")) or 0.0) + (_f(c.get("nbl_return_bill_count")) or 0.0)
+        num_brands = len([t for t in presence.replace("[", "").replace("]", "").replace("'", "").split() if t]) or None
+
+        metrics = CorporateMetrics(
+            num_rpsg_brands=num_brands,
+            avg_basket_value=(total_spend / total_bills) if total_bills > 0 else None,
+            return_pct=(ret_bills / total_bills * 100.0) if total_bills > 0 else None,
+            rfm_brand=pref_brand_name,
+            rfm_recency=c.get(f"{pfx_pref}_rfm_recency_score"),
+            rfm_frequency=c.get(f"{pfx_pref}_rfm_frequency_score"),
+            rfm_monetary=c.get(f"{pfx_pref}_rfm_monetary_score"),
+            spend_decile=c.get(f"{pfx_pref}_spend_decile"),
+            segment=_s(c.get(f"{pfx_pref}_l2_segment")),
+            lifecycle_stage=_s(c.get(f"{pfx_pref}_lifecycle_stage")),
+        )
+
+        # ── Activity timeline (transactions across both brands) ──────────────────
+        timeline = await self._fetch_corporate_timeline(_s(c.get("mobile")))
+
         return CorporateSingleViewResponse(
             found=True,
             identity=identity,
+            insights=insights,
+            metrics=metrics,
+            activity_timeline=timeline,
             spencers=_panel("spn", is_spn),
             nbl=_panel("nbl", is_nbl),
         )
+
+    async def _fetch_preferred_category(self, mobile: str | None) -> str | None:
+        if not mobile:
+            return None
+        unions = []
+        for br in ("spencers", "natures_basket"):
+            tbl = BRAND_SCHEMA_CONFIG[br]["s_fact_bill_transactions"]
+            unions.append(
+                f"SELECT UPPER(TRIM(segment_desc)) AS segment, "
+                f"COALESCE(gross_sale_value,0) AS spend FROM {tbl} "
+                f"WHERE RIGHT(mobile_number,10)=RIGHT(%s,10) AND segment_desc IS NOT NULL"
+            )
+        sql = (
+            "SELECT segment, SUM(spend) AS total FROM (\n"
+            + "\nUNION ALL\n".join(unions)
+            + "\n) u GROUP BY segment ORDER BY total DESC LIMIT 1"
+        )
+        try:
+            rows = await self._query(sql, (mobile, mobile))
+        except Exception as e:
+            logger.warning(f"preferred category fetch failed: {e}")
+            return None
+        return _s(rows[0]["segment"]) if rows else None
+
+    async def _fetch_corporate_timeline(self, mobile: str | None) -> list[TimelineEvent]:
+        if not mobile:
+            return []
+        parts = []
+        for br, label in (("spencers", "Spencer's"), ("natures_basket", "Nature's Basket")):
+            tbl = BRAND_SCHEMA_CONFIG[br]["s_fact_bill_transactions"]
+            parts.append(
+                f"SELECT bill_date, '{label}' AS brand, "
+                f"COALESCE(store_desc, store_code) AS store, "
+                f"UPPER(TRIM(segment_desc)) AS segment, "
+                f"COALESCE(gross_sale_value,0) AS spend "
+                f"FROM {tbl} WHERE RIGHT(mobile_number,10)=RIGHT(%s,10) AND bill_date IS NOT NULL"
+            )
+        # One row per bill_date+brand+store (a "visit"), summing line items.
+        sql = (
+            "SELECT bill_date, brand, store, "
+            "  (ARRAY_AGG(segment ORDER BY spend DESC))[1] AS segment, "
+            "  SUM(spend) AS spend FROM (\n"
+            + "\nUNION ALL\n".join(parts)
+            + "\n) u GROUP BY bill_date, brand, store "
+            "ORDER BY bill_date DESC LIMIT 20"
+        )
+        try:
+            rows = await self._query(sql, (mobile, mobile))
+        except Exception as e:
+            logger.warning(f"corporate timeline fetch failed: {e}")
+            return []
+        return [
+            TimelineEvent(
+                date=_s(r["bill_date"]) or "",
+                brand=_s(r["brand"]) or "",
+                type="Purchase",
+                store=_s(r["store"]),
+                segment=_s(r["segment"]),
+                spend=_f(r["spend"]),
+            )
+            for r in rows
+        ]

@@ -45,9 +45,48 @@ interface CorporateView {
     is_spencers_customer: boolean;
     is_nbl_customer: boolean;
   } | null;
+  insights?: {
+    lifetime_value: number | null;
+    preferred_brand: string | null;
+    preferred_category: string | null;
+    preferred_channel: string | null;
+  } | null;
+  metrics?: {
+    num_rpsg_brands: number | null;
+    avg_basket_value: number | null;
+    return_pct: number | null;
+    rfm_brand: string | null;
+    rfm_recency: number | null;
+    rfm_frequency: number | null;
+    rfm_monetary: number | null;
+    spend_decile: number | null;
+    segment: string | null;
+    lifecycle_stage: string | null;
+  } | null;
+  activity_timeline: {
+    date: string;
+    brand: string;
+    type: string;
+    store: string | null;
+    segment: string | null;
+    spend: number | null;
+  }[];
   spencers?: BrandPanel | null;
   nbl?: BrandPanel | null;
 }
+
+const SEGMENT_COLORS: Record<string, string> = {
+  "FOOD": "#16a34a",
+  "NON FOOD GROCERY": "#0891b2",
+  "GM": "#7c3aed",
+  "HI TECH": "#2563eb",
+  "FASHION CB": "#db2777",
+  "NON TRADE": "#ea580c",
+};
+const BRAND_COLORS: Record<string, string> = {
+  "Spencer's": "#E0402E",
+  "Nature's Basket": "#16a34a",
+};
 
 const fmtINR = (v: number | null | undefined) =>
   v == null ? "—" : "₹" + Math.round(v).toLocaleString("en-IN");
@@ -58,6 +97,22 @@ const Field: React.FC<{ label: string; value: React.ReactNode }> = ({ label, val
   <div className="flex justify-between gap-3 py-1 text-sm">
     <span className="text-gray-500">{label}</span>
     <span className="font-medium text-gray-800 text-right truncate">{value ?? "—"}</span>
+  </div>
+);
+
+const HeroCard: React.FC<{ label: string; value: React.ReactNode; accent: string }> = ({
+  label, value, accent,
+}) => (
+  <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 border-l-4" style={{ borderLeftColor: accent }}>
+    <div className="text-xs text-gray-400 uppercase tracking-wider">{label}</div>
+    <div className="text-lg font-bold text-gray-900 mt-1 truncate" title={typeof value === "string" ? value : undefined}>{value}</div>
+  </div>
+);
+
+const MetricTile: React.FC<{ label: string; value: React.ReactNode }> = ({ label, value }) => (
+  <div className="bg-gray-50 rounded-lg p-3 border border-gray-100">
+    <div className="text-[10px] text-gray-400 uppercase tracking-wider truncate">{label}</div>
+    <div className="text-sm font-semibold text-gray-800 mt-1 truncate" title={typeof value === "string" ? value : undefined}>{value}</div>
   </div>
 );
 
@@ -223,6 +278,74 @@ export const CorporateSingleView: React.FC = () => {
               )}
             </div>
           </div>
+
+          {/* Insights hero strip */}
+          {data.insights && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <HeroCard label="Lifetime Value" value={fmtINR(data.insights.lifetime_value)} accent="#7B2D8B" />
+              <HeroCard label="Preferred Brand" value={data.insights.preferred_brand || "—"} accent="#E0402E" />
+              <HeroCard label="Preferred Category" value={data.insights.preferred_category || "—"} accent="#16a34a" />
+              <HeroCard label="Preferred Channel" value={data.insights.preferred_channel || "—"} accent="#2563eb" />
+            </div>
+          )}
+
+          {/* Metrics tile grid */}
+          {data.metrics && (
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                📊 Key Metrics
+                {data.metrics.rfm_brand && (
+                  <span className="text-[10px] normal-case font-normal text-gray-400">
+                    (RFM / decile / segment from {data.metrics.rfm_brand})
+                  </span>
+                )}
+              </h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                <MetricTile label="RPSG Brands" value={fmtNum(data.metrics.num_rpsg_brands)} />
+                <MetricTile label="Avg Basket Value" value={fmtINR(data.metrics.avg_basket_value)} />
+                <MetricTile label="Return %" value={data.metrics.return_pct == null ? "—" : data.metrics.return_pct.toFixed(1) + "%"} />
+                <MetricTile label="Spend Decile" value={fmtNum(data.metrics.spend_decile)} />
+                <MetricTile label="RFM (R/F/M)" value={[data.metrics.rfm_recency, data.metrics.rfm_frequency, data.metrics.rfm_monetary].every((x) => x == null) ? "—" : `${data.metrics.rfm_recency ?? "–"}/${data.metrics.rfm_frequency ?? "–"}/${data.metrics.rfm_monetary ?? "–"}`} />
+                <MetricTile label="Segment (L2)" value={data.metrics.segment || "—"} />
+                <MetricTile label="Lifecycle" value={data.metrics.lifecycle_stage || "—"} />
+              </div>
+            </div>
+          )}
+
+          {/* Activity Timeline */}
+          {data.activity_timeline.length > 0 && (
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4 flex items-center gap-2">
+                🕑 Activity Timeline
+                <span className="text-[10px] normal-case font-normal text-gray-400">(transaction events, both brands)</span>
+              </h3>
+              <div className="overflow-x-auto pb-2">
+                <div className="flex items-start gap-0 min-w-min relative">
+                  {/* connecting line */}
+                  <div className="absolute top-3 left-0 right-0 h-0.5 bg-gray-200" style={{ zIndex: 0 }} />
+                  {data.activity_timeline.map((e, i) => {
+                    const dot = BRAND_COLORS[e.brand] || "#6366f1";
+                    return (
+                      <div key={i} className="flex flex-col items-center px-4 relative" style={{ zIndex: 1, minWidth: 130 }}>
+                        <div className="w-6 h-6 rounded-full border-2 border-white shadow flex items-center justify-center" style={{ backgroundColor: dot }}>
+                          <span className="w-2 h-2 rounded-full bg-white" />
+                        </div>
+                        <div className="text-[10px] text-gray-400 mt-1.5">{e.date}</div>
+                        <div className="text-xs font-semibold text-gray-800 mt-0.5 text-center leading-tight">{e.brand}</div>
+                        <div className="text-[11px] text-gray-600 text-center leading-tight truncate max-w-[120px]" title={e.store || ""}>{e.store || "—"}</div>
+                        {e.segment && (
+                          <span className="mt-1 px-1.5 py-0.5 rounded text-[9px] font-medium text-white" style={{ backgroundColor: SEGMENT_COLORS[e.segment] || "#94a3b8" }}>
+                            {e.segment}
+                          </span>
+                        )}
+                        <div className="text-[11px] font-semibold text-gray-700 mt-1 tabular-nums">{fmtINR(e.spend)}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Side-by-side brand comparison */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
