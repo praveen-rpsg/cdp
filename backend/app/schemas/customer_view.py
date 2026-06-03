@@ -64,6 +64,18 @@ class BehavioralBlock(BaseModel):
     online_spend: float | None = None
     store_bills: float | None = None
     online_bills: float | None = None
+    # ── Behavioral insights (promo / rhythm / RFM / basket) ──
+    promo_bill_count: float | None = None
+    return_bill_count: float | None = None
+    weekend_bill_count: float | None = None
+    wednesday_bill_count: float | None = None
+    distinct_months: float | None = None
+    distinct_store_count: float | None = None
+    distinct_article_count: float | None = None
+    avg_items_per_bill: float | None = None
+    rfm_recency_score: int | None = None
+    rfm_frequency_score: int | None = None
+    rfm_monetary_score: int | None = None
 
 
 class ReachabilityBlock(BaseModel):

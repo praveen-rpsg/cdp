@@ -163,7 +163,11 @@ class CustomerViewService:
                    l1_segment, l2_segment, lifecycle_stage,
                    fav_store_name, fav_store_type, fav_day,
                    fav_article_by_spend_desc, fav_article_by_nob_desc,
-                   channel_presence, store_spend, online_spend, store_bills, online_bills
+                   channel_presence, store_spend, online_spend, store_bills, online_bills,
+                   promo_bill_count, return_bill_count, weekend_bill_count,
+                   wednesday_bill_count, distinct_months, distinct_store_count,
+                   distinct_article_count, avg_items_per_bill,
+                   rfm_recency_score, rfm_frequency_score, rfm_monetary_score
               FROM {tbl_ba}
              WHERE customer_id = %s
              LIMIT 1
@@ -198,6 +202,17 @@ class CustomerViewService:
                 online_spend=_f(b.get("online_spend")),
                 store_bills=_f(b.get("store_bills")),
                 online_bills=_f(b.get("online_bills")),
+                promo_bill_count=_f(b.get("promo_bill_count")),
+                return_bill_count=_f(b.get("return_bill_count")),
+                weekend_bill_count=_f(b.get("weekend_bill_count")),
+                wednesday_bill_count=_f(b.get("wednesday_bill_count")),
+                distinct_months=_f(b.get("distinct_months")),
+                distinct_store_count=_f(b.get("distinct_store_count")),
+                distinct_article_count=_f(b.get("distinct_article_count")),
+                avg_items_per_bill=_f(b.get("avg_items_per_bill")),
+                rfm_recency_score=b.get("rfm_recency_score"),
+                rfm_frequency_score=b.get("rfm_frequency_score"),
+                rfm_monetary_score=b.get("rfm_monetary_score"),
             )
 
         # ── Propensity ──────────────────────────────────────────────────────────

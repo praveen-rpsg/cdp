@@ -289,6 +289,57 @@ export const CorporateSingleView: React.FC = () => {
             </div>
           )}
 
+          {/* Wallet share + cross-sell */}
+          {(() => {
+            const spn = data.spencers?.total_spend ?? 0;
+            const nbl = data.nbl?.total_spend ?? 0;
+            const tot = spn + nbl;
+            const spnActive = !!data.spencers?.present;
+            const nblActive = !!data.nbl?.present;
+            const crossSell =
+              spnActive && !nblActive
+                ? "Active in Spencer's only — cross-sell Nature's Basket"
+                : nblActive && !spnActive
+                ? "Active in Nature's Basket only — cross-sell Spencer's"
+                : null;
+            if (tot <= 0 && !crossSell) return null;
+            return (
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                  💰 Wallet Share
+                </h3>
+                {tot > 0 && (
+                  <>
+                    <div className="flex h-6 rounded-lg overflow-hidden">
+                      {spn > 0 && (
+                        <div className="flex items-center justify-center text-[11px] font-semibold text-white"
+                          style={{ width: `${(spn / tot) * 100}%`, backgroundColor: "#E0402E" }}>
+                          {((spn / tot) * 100).toFixed(0)}%
+                        </div>
+                      )}
+                      {nbl > 0 && (
+                        <div className="flex items-center justify-center text-[11px] font-semibold text-white"
+                          style={{ width: `${(nbl / tot) * 100}%`, backgroundColor: "#16a34a" }}>
+                          {((nbl / tot) * 100).toFixed(0)}%
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex justify-between text-xs text-gray-500 mt-1.5">
+                      <span>Spencer's · {fmtINR(spn)}</span>
+                      <span>Nature's Basket · {fmtINR(nbl)}</span>
+                    </div>
+                  </>
+                )}
+                {crossSell && (
+                  <div className="mt-3 flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+                    <span>🎯</span>
+                    <span className="font-medium">{crossSell}</span>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
           {/* Metrics tile grid */}
           {data.metrics && (
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
