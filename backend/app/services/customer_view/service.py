@@ -449,7 +449,7 @@ class CustomerViewService:
 
         # Preferred brand = higher lifetime spend.
         pfx_pref = "spn" if spn_spend >= nbl_spend else "nbl"
-        pref_brand_name = "Spencer's" if pfx_pref == "spn" else "Nature's Basket"
+        pref_brand_name = "Spencers" if pfx_pref == "spn" else "Nature's Basket"
 
         # Preferred channel by combined store vs online spend.
         store_sp = (_f(c.get("spn_store_spend")) or 0.0) + (_f(c.get("nbl_store_spend")) or 0.0)
@@ -524,7 +524,7 @@ class CustomerViewService:
         if not mobile:
             return []
         parts = []
-        for br, label in (("spencers", "Spencer's"), ("natures_basket", "Nature's Basket")):
+        for br, label in (("spencers", "Spencers"), ("natures_basket", "Nature's Basket")):
             tbl = BRAND_SCHEMA_CONFIG[br]["s_fact_bill_transactions"]
             parts.append(
                 f"SELECT bill_date, '{label}' AS brand, "

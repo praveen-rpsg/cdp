@@ -84,7 +84,7 @@ const SEGMENT_COLORS: Record<string, string> = {
   "NON TRADE": "#ea580c",
 };
 const BRAND_COLORS: Record<string, string> = {
-  "Spencer's": "#E0402E",
+  "Spencers": "#E0402E",
   "Nature's Basket": "#16a34a",
 };
 
@@ -271,7 +271,7 @@ export const CorporateSingleView: React.FC = () => {
             </div>
             <div className="mt-3 pt-3 border-t border-gray-100 flex gap-2">
               {id.is_spencers_customer && (
-                <span className="px-2 py-0.5 rounded-full text-xs font-semibold text-white" style={{ backgroundColor: "#E0402E" }}>Spencer's</span>
+                <span className="px-2 py-0.5 rounded-full text-xs font-semibold text-white" style={{ backgroundColor: "#E0402E" }}>Spencers</span>
               )}
               {id.is_nbl_customer && (
                 <span className="px-2 py-0.5 rounded-full text-xs font-semibold text-white" style={{ backgroundColor: "#16a34a" }}>Nature's Basket</span>
@@ -298,9 +298,9 @@ export const CorporateSingleView: React.FC = () => {
             const nblActive = !!data.nbl?.present;
             const crossSell =
               spnActive && !nblActive
-                ? "Active in Spencer's only — cross-sell Nature's Basket"
+                ? "Active in Spencers only — cross-sell Nature's Basket"
                 : nblActive && !spnActive
-                ? "Active in Nature's Basket only — cross-sell Spencer's"
+                ? "Active in Nature's Basket only — cross-sell Spencers"
                 : null;
             if (tot <= 0 && !crossSell) return null;
             return (
@@ -325,7 +325,7 @@ export const CorporateSingleView: React.FC = () => {
                       )}
                     </div>
                     <div className="flex justify-between text-xs text-gray-500 mt-1.5">
-                      <span>Spencer's · {fmtINR(spn)}</span>
+                      <span>Spencers · {fmtINR(spn)}</span>
                       <span>Nature's Basket · {fmtINR(nbl)}</span>
                     </div>
                   </>
@@ -400,7 +400,7 @@ export const CorporateSingleView: React.FC = () => {
 
           {/* Side-by-side brand comparison */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            <BrandColumn title="Spencer's" color="#E0402E" panel={data.spencers} />
+            <BrandColumn title="Spencers" color="#E0402E" panel={data.spencers} />
             <BrandColumn title="Nature's Basket" color="#16a34a" panel={data.nbl} />
           </div>
         </>
