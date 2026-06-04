@@ -2,14 +2,13 @@ import React, { useState, useCallback, useEffect, useRef } from "react";
 import { useSegmentStore } from "../../store/segmentStore";
 import {
   CATEGORY_CONFIG,
-  RANKABLE_ATTRIBUTES,
-  SPLITTABLE_ATTRIBUTES,
   SET_OPERATION_LABELS,
 } from "../../types/segment";
 import type { SetOperationType } from "../../types/segment";
 import { ConditionGroupUI } from "./ConditionGroupUI";
 import AudienceSummaryPanel from "./AudienceSummaryPanel";
 import AudiencePreviewPanel from "./AudiencePreviewPanel";
+import { RankSplitStudio } from "./RankSplitStudio";
 import { NLSegmentPanel } from "./NLSegmentPanel";
 
 /* ── Toast ─────────────────────────────────────────────────── */
@@ -72,8 +71,6 @@ export const SegmentBuilder: React.FC = () => {
     isEstimating,
     compiledSQL,
     isDirty,
-    rankConfig,
-    splitConfig,
     splitCounts,
     setOperation,
     setOperationCounts,
@@ -84,12 +81,7 @@ export const SegmentBuilder: React.FC = () => {
     setIsEstimating,
     setAudienceCount,
     setCompiledSQL,
-    setRankConfig,
-    setSplitConfig,
     setSplitCounts,
-    addSplitEntry,
-    removeSplitEntry,
-    updateSplitEntry,
     setSetOperation,
     setSetOperationCounts,
     addCondition,
@@ -110,6 +102,7 @@ export const SegmentBuilder: React.FC = () => {
   const [templateFilter, setTemplateFilter] = useState<string>("all");
   const [showRankSplit, setShowRankSplit] = useState(false);
   const [showSetOps, setShowSetOps] = useState(false);
+  const [savedSegs, setSavedSegs] = useState<any[]>([]);
   const [toast, setToast] = useState<ToastState | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -131,6 +124,15 @@ export const SegmentBuilder: React.FC = () => {
       .catch(() => setTemplates([]));
   }, [selectedBrandCode]);
 
+  // Saved segments (same brand) available as B/C operands for Set Operations.
+  useEffect(() => {
+    if (!showSetOps) return;
+    fetch("/api/v1/segments/saved/list?status=active&page_size=200")
+      .then((r) => r.json())
+      .then((d) => setSavedSegs((d.segments || []).filter((s: any) => s.brand_code === selectedBrandCode)))
+      .catch(() => setSavedSegs([]));
+  }, [showSetOps, selectedBrandCode]);
+
   const handleLoadTemplate = (template: any) => {
     if (template.rules?.root) {
       const addIds = (node: any): any => {
@@ -148,22 +150,32 @@ export const SegmentBuilder: React.FC = () => {
 
   const handleEstimate = async () => { await estimateAudience(); };
 
-  const handleSave = async () => {
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [showStudio, setShowStudio] = useState(false);
+
+  const handleSaveSubmit = async (meta: {
+    name: string; description: string; business_purpose: string;
+    tags: string[]; created_by: string;
+  }) => {
     try {
-      const response = await fetch("/api/v1/segments/", {
+      const response = await fetch("/api/v1/segments/saved", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          brand_id: selectedBrandCode,
-          name: segmentName,
-          description: segmentDescription,
-          segment_type: segmentType,
+          name: meta.name,
+          description: meta.description || null,
+          business_purpose: meta.business_purpose || null,
+          tags: meta.tags,
+          brand_code: selectedBrandCode,
           rules: getSegmentDefinition(),
-          is_cross_brand: selectedBrandCode === "corporate",
+          created_by: meta.created_by || null,
         }),
       });
+      if (!response.ok) throw new Error();
       const data = await response.json();
-      showToast(`Segment saved — ID: ${data.id}`);
+      if (meta.created_by) localStorage.setItem("u360_creator", meta.created_by);
+      setShowSaveModal(false);
+      showToast(`Segment "${data.name}" saved (${(data.audience_count ?? 0).toLocaleString()} profiles)`);
     } catch {
       showToast("Failed to save segment. Please try again.", "error");
     }
@@ -259,8 +271,8 @@ export const SegmentBuilder: React.FC = () => {
                 ) : "Estimate Audience"}
               </button>
               <button
-                onClick={handleSave}
-                disabled={!segmentName || !selectedBrandCode}
+                onClick={() => setShowSaveModal(true)}
+                disabled={!selectedBrandCode}
                 className="px-3 sm:px-4 py-1.5 sm:py-2 text-sm bg-indigo-600 text-white hover:bg-indigo-700 rounded-lg disabled:opacity-40 transition-colors duration-150 active:scale-95 font-medium shadow-sm"
               >
                 <span className="hidden sm:inline">Save Segment</span>
@@ -383,106 +395,20 @@ export const SegmentBuilder: React.FC = () => {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" />
                   </svg>
                   <span>Rank &amp; Split</span>
-                  {(rankConfig.enabled || splitConfig.enabled) && (
-                    <span className="px-2 py-0.5 text-[10px] bg-indigo-100 text-indigo-700 rounded-full font-semibold">Active</span>
-                  )}
                 </div>
                 <ChevronIcon open={showRankSplit} />
               </button>
               <CollapsibleContent open={showRankSplit}>
-                <div className="px-4 pb-5 space-y-5 border-t border-gray-100">
+                <div className="px-4 pb-5 border-t border-gray-100">
                   <div className="pt-4">
-                    <label className="flex items-center gap-2.5 cursor-pointer mb-3">
-                      <input type="checkbox" checked={rankConfig.enabled} onChange={(e) => setRankConfig({ enabled: e.target.checked })} className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500" />
-                      <span className="text-sm font-medium text-gray-700">Rank by Attribute</span>
-                    </label>
-                    {rankConfig.enabled && (
-                      <div className="ml-6 space-y-3 p-3 bg-indigo-50/70 rounded-xl border border-indigo-100">
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                          <div>
-                            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Rank Attribute</label>
-                            <select value={rankConfig.attribute || ""} onChange={(e) => setRankConfig({ attribute: e.target.value || null })} className="w-full px-2 py-2 border border-gray-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 outline-none bg-white">
-                              <option value="">Select…</option>
-                              {RANKABLE_ATTRIBUTES.map((attr) => <option key={attr.key} value={attr.key}>{attr.label}</option>)}
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Order</label>
-                            <select value={rankConfig.order} onChange={(e) => setRankConfig({ order: e.target.value as "asc" | "desc" })} className="w-full px-2 py-2 border border-gray-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 outline-none bg-white">
-                              <option value="desc">Highest First</option>
-                              <option value="asc">Lowest First</option>
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Limit (Top N)</label>
-                            <input type="number" value={rankConfig.profile_limit ?? ""} onChange={(e) => setRankConfig({ profile_limit: e.target.value ? parseInt(e.target.value) : null })} placeholder="No limit" className="w-full px-2 py-2 border border-gray-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 outline-none bg-white" />
-                          </div>
-                        </div>
-                        {rankConfig.attribute && (
-                          <p className="text-xs text-indigo-600">
-                            Ranking by <strong>{RANKABLE_ATTRIBUTES.find(a => a.key === rankConfig.attribute)?.label || rankConfig.attribute}</strong>
-                            {" "}({rankConfig.order === "desc" ? "highest first" : "lowest first"})
-                            {rankConfig.profile_limit ? `, top ${rankConfig.profile_limit.toLocaleString()}` : ""}
-                          </p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  <div className="border-t border-gray-100 pt-4">
-                    <label className="flex items-center gap-2.5 cursor-pointer mb-3">
-                      <input type="checkbox" checked={splitConfig.enabled} onChange={(e) => setSplitConfig({ enabled: e.target.checked })} className="w-4 h-4 text-green-600 rounded border-gray-300 focus:ring-green-500" />
-                      <span className="text-sm font-medium text-gray-700">Split Segment</span>
-                    </label>
-                    {splitConfig.enabled && (
-                      <div className="ml-6 space-y-3 p-3 bg-green-50/70 rounded-xl border border-green-100">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Split Type</label>
-                            <select value={splitConfig.split_type} onChange={(e) => setSplitConfig({ split_type: e.target.value as "percent" | "attribute" })} className="w-full px-2 py-2 border border-gray-200 rounded-lg text-xs focus:ring-2 focus:ring-green-500 outline-none bg-white">
-                              <option value="percent">Percentage Split</option>
-                              <option value="attribute">Attribute Split</option>
-                            </select>
-                          </div>
-                          {splitConfig.split_type === "attribute" && (
-                            <div>
-                              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Split Attribute</label>
-                              <select value={splitConfig.attribute || ""} onChange={(e) => setSplitConfig({ attribute: e.target.value || null })} className="w-full px-2 py-2 border border-gray-200 rounded-lg text-xs focus:ring-2 focus:ring-green-500 outline-none bg-white">
-                                <option value="">Select…</option>
-                                {SPLITTABLE_ATTRIBUTES.map((attr) => <option key={attr.key} value={attr.key}>{attr.label}</option>)}
-                              </select>
-                            </div>
-                          )}
-                        </div>
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Splits ({splitConfig.splits.length})</span>
-                            <button onClick={addSplitEntry} className="px-2.5 py-1 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors duration-150 active:scale-95">+ Add Split</button>
-                          </div>
-                          {splitConfig.splits.map((split, idx) => (
-                            <div key={idx} className="flex items-center gap-2 bg-white rounded-lg p-2 border border-green-200">
-                              <input type="text" value={split.name} onChange={(e) => updateSplitEntry(idx, { name: e.target.value })} placeholder="Split name" className="flex-1 min-w-0 px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:ring-2 focus:ring-green-500 outline-none" />
-                              {splitConfig.split_type === "percent" ? (
-                                <div className="flex items-center gap-1 shrink-0">
-                                  <input type="number" value={split.percent ?? ""} onChange={(e) => updateSplitEntry(idx, { percent: parseInt(e.target.value) || 0 })} placeholder="%" className="w-14 px-2 py-1.5 border border-gray-200 rounded-md text-xs text-right focus:ring-2 focus:ring-green-500 outline-none" min={0} max={100} />
-                                  <span className="text-xs text-gray-500">%</span>
-                                </div>
-                              ) : (
-                                <input type="text" value={split.value ?? ""} onChange={(e) => updateSplitEntry(idx, { value: e.target.value })} placeholder="Value" className="w-28 px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:ring-2 focus:ring-green-500 outline-none" />
-                              )}
-                              <button onClick={() => removeSplitEntry(idx)} className="p-1 text-gray-400 hover:text-red-500 transition-colors duration-150 rounded">
-                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" /></svg>
-                              </button>
-                            </div>
-                          ))}
-                          {splitConfig.split_type === "percent" && splitConfig.splits.length > 0 && (
-                            <p className="text-xs text-gray-500">
-                              Total: {splitConfig.splits.reduce((s, x) => s + (x.percent || 0), 0)}%
-                              {splitConfig.splits.reduce((s, x) => s + (x.percent || 0), 0) !== 100 && <span className="text-amber-600 ml-1 font-medium">(should be 100%)</span>}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    )}
+                    <button
+                      onClick={() => setShowStudio(true)}
+                      disabled={!selectedBrandCode}
+                      className="w-full mb-2 px-3 py-2.5 text-sm bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-lg font-medium hover:opacity-90 disabled:opacity-40 flex items-center justify-center gap-2"
+                    >
+                      ⚡ Open Rank &amp; Split Studio
+                    </button>
+                    <p className="text-[11px] text-gray-400">Prioritise by weighted ranking, split into groups with budget/count constraints, preview revenue, and save each group as a segment.</p>
                   </div>
                 </div>
               </CollapsibleContent>
@@ -538,11 +464,30 @@ export const SegmentBuilder: React.FC = () => {
                             <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Combine with Segments ({setOperation.segments.length})</span>
                             <button onClick={() => setSetOperation({ segments: [...setOperation.segments, { segment_id: "", name: "" }] })} className="px-2.5 py-1 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-150 active:scale-95">+ Add Segment</button>
                           </div>
-                          <p className="text-[10px] text-blue-700 bg-blue-100 px-3 py-1.5 rounded-lg">The current segment (above) is Segment A. Add other segments to combine with.</p>
+                          <p className="text-[10px] text-blue-700 bg-blue-100 px-3 py-1.5 rounded-lg">The current segment (above) is Segment A. Pick saved segments to combine with.</p>
+                          {savedSegs.length === 0 && (
+                            <p className="text-[10px] text-gray-400 px-1">No saved segments for this brand yet — save one first to combine.</p>
+                          )}
                           {setOperation.segments.map((entry, idx) => (
                             <div key={idx} className="flex items-center gap-2 bg-white rounded-lg p-2 border border-blue-200">
                               <span className="text-xs font-bold text-gray-500 w-5 flex-shrink-0">{String.fromCharCode(66 + idx)}</span>
-                              <input type="text" value={entry.name || ""} onChange={(e) => { const s = [...setOperation.segments]; s[idx] = { ...s[idx], name: e.target.value }; setSetOperation({ segments: s }); }} placeholder="Segment name or ID" className="flex-1 min-w-0 px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none" />
+                              <select
+                                value={entry.segment_id || ""}
+                                onChange={(e) => {
+                                  const seg = savedSegs.find((s) => s.id === e.target.value);
+                                  const s = [...setOperation.segments];
+                                  s[idx] = { segment_id: e.target.value, name: seg?.name || "" };
+                                  setSetOperation({ segments: s });
+                                }}
+                                className="flex-1 min-w-0 px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+                              >
+                                <option value="">Select saved segment…</option>
+                                {savedSegs.map((s) => (
+                                  <option key={s.id} value={s.id}>
+                                    {s.name}{s.audience_count != null ? ` (${s.audience_count.toLocaleString()})` : ""}
+                                  </option>
+                                ))}
+                              </select>
                               <button onClick={() => setSetOperation({ segments: setOperation.segments.filter((_, i) => i !== idx) })} className="p-1 text-gray-400 hover:text-red-500 transition-colors duration-150 rounded">
                                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" /></svg>
                               </button>
@@ -739,6 +684,83 @@ export const SegmentBuilder: React.FC = () => {
       )}
 
       <Toast toast={toast} />
+      {showSaveModal && (
+        <SaveSegmentModal
+          defaultName={segmentName}
+          defaultDescription={segmentDescription}
+          onClose={() => setShowSaveModal(false)}
+          onSubmit={handleSaveSubmit}
+        />
+      )}
+      {showStudio && (
+        <RankSplitStudio
+          onClose={() => setShowStudio(false)}
+          onSaved={(msg) => showToast(msg)}
+        />
+      )}
+    </div>
+  );
+};
+
+/* ── Save Segment metadata modal ─────────────────────────────── */
+const SaveSegmentModal: React.FC<{
+  defaultName: string;
+  defaultDescription: string;
+  onClose: () => void;
+  onSubmit: (m: { name: string; description: string; business_purpose: string; tags: string[]; created_by: string }) => void;
+}> = ({ defaultName, defaultDescription, onClose, onSubmit }) => {
+  const [name, setName] = useState(defaultName);
+  const [description, setDescription] = useState(defaultDescription);
+  const [purpose, setPurpose] = useState("");
+  const [tags, setTags] = useState("");
+  const [creator, setCreator] = useState(localStorage.getItem("u360_creator") || "");
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    if (!name.trim()) return;
+    setSaving(true);
+    await onSubmit({
+      name: name.trim(),
+      description,
+      business_purpose: purpose,
+      tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
+      created_by: creator.trim(),
+    });
+    setSaving(false);
+  };
+
+  const fld = "w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none";
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-3" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-lg font-bold text-gray-900">Save Segment</h3>
+        <div>
+          <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1">Segment Name <span className="text-red-500">*</span></label>
+          <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g., High-Value Spencer's Customers" className={fld} />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1">Description</label>
+          <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} placeholder="What this segment represents…" className={`${fld} resize-none`} />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1">Business Purpose</label>
+          <input value={purpose} onChange={(e) => setPurpose(e.target.value)} placeholder="e.g., Retention campaign" className={fld} />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1">Tags (comma-separated)</label>
+          <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="High Value, Loyalty, Spencer's" className={fld} />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1">Your Name (creator)</label>
+          <input value={creator} onChange={(e) => setCreator(e.target.value)} placeholder="e.g., Raghav Gupta" className={fld} />
+        </div>
+        <div className="flex justify-end gap-2 pt-1">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>
+          <button onClick={submit} disabled={!name.trim() || saving} className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-40 font-medium">
+            {saving ? "Saving…" : "Save Segment"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 };

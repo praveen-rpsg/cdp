@@ -21,6 +21,12 @@ from app.schemas.api_schemas import (
     AudienceSummaryResponse,
     CompileRequest,
     CompileResponse,
+    RankSplitRequest,
+    RankSplitSaveRequest,
+    SavedSegment,
+    SavedSegmentCreate,
+    SavedSegmentListResponse,
+    SavedSegmentUpdate,
     SegmentCreate,
     SegmentListResponse,
     SegmentResponse,
@@ -96,6 +102,106 @@ async def delete_segment(segment_id: str):
     """Delete (soft) a segment."""
     result = await service.delete_segment(segment_id)
     return result
+
+
+# =============================================================================
+# SAVED SEGMENTS REPOSITORY
+# =============================================================================
+
+
+@router.post("/saved", response_model=SavedSegment)
+async def create_saved_segment(payload: SavedSegmentCreate):
+    """Persist a segment into the Saved Segments repository."""
+    return await service.save_segment(payload.model_dump())
+
+
+@router.get("/saved/list", response_model=SavedSegmentListResponse)
+async def list_saved_segments(
+    search: str | None = Query(None),
+    segment_type: str | None = Query(None, description="customer | corporate | all"),
+    status: str | None = Query("active", description="active | archived | all"),
+    created_by: str | None = Query(None),
+    sort: str = Query("updated", description="updated | created | name | count"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+):
+    """List saved segments with search, filters, sort, and pagination."""
+    return await service.list_saved_segments(
+        search=search, segment_type=segment_type, status=status,
+        created_by=created_by, sort=sort, page=page, page_size=page_size,
+    )
+
+
+@router.get("/saved/{seg_id}", response_model=SavedSegment)
+async def get_saved_segment(seg_id: str):
+    seg = await service.get_saved_segment(seg_id)
+    if not seg:
+        raise HTTPException(status_code=404, detail="Saved segment not found")
+    return seg
+
+
+@router.put("/saved/{seg_id}", response_model=SavedSegment)
+async def update_saved_segment(seg_id: str, payload: SavedSegmentUpdate):
+    seg = await service.update_saved_segment(seg_id, payload.model_dump(exclude_unset=True))
+    if not seg:
+        raise HTTPException(status_code=404, detail="Saved segment not found")
+    return seg
+
+
+@router.post("/saved/{seg_id}/clone", response_model=SavedSegment)
+async def clone_saved_segment(seg_id: str, created_by: str | None = Query(None)):
+    seg = await service.clone_saved_segment(seg_id, created_by=created_by)
+    if not seg:
+        raise HTTPException(status_code=404, detail="Saved segment not found")
+    return seg
+
+
+@router.post("/saved/{seg_id}/refresh", response_model=SavedSegment)
+async def refresh_saved_segment(seg_id: str):
+    seg = await service.refresh_saved_segment_count(seg_id)
+    if not seg:
+        raise HTTPException(status_code=404, detail="Saved segment not found")
+    return seg
+
+
+@router.delete("/saved/{seg_id}")
+async def delete_saved_segment(seg_id: str):
+    ok = await service.delete_saved_segment(seg_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Saved segment not found")
+    return {"id": seg_id, "status": "deleted"}
+
+
+# =============================================================================
+# RANK & SPLIT ENGINE
+# =============================================================================
+
+
+@router.post("/rank-split/preview")
+async def rank_split_preview(payload: RankSplitRequest):
+    """Preview per-group count, revenue, and avg spend for a rank/split config."""
+    return await service.rank_split_preview(
+        brand_code=payload.brand_code,
+        rules=payload.rules,
+        rank=[r.model_dump() for r in payload.rank],
+        splits=[s.model_dump() for s in payload.splits],
+        constraints=payload.constraints.model_dump() if payload.constraints else None,
+    )
+
+
+@router.post("/rank-split/save")
+async def rank_split_save(payload: RankSplitSaveRequest):
+    """Persist each rank/split group as a child segment in the repository."""
+    return await service.save_rank_split_segments(
+        brand_code=payload.brand_code,
+        base_name=payload.base_name,
+        rules=payload.rules,
+        rank=[r.model_dump() for r in payload.rank],
+        splits=[s.model_dump() for s in payload.splits],
+        constraints=payload.constraints.model_dump() if payload.constraints else None,
+        created_by=payload.created_by,
+        parent_segment_id=payload.parent_segment_id,
+    )
 
 
 # =============================================================================

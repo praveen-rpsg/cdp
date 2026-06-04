@@ -2,10 +2,11 @@ import React, { useEffect, useState } from "react";
 import { SegmentBuilder } from "./components/segment-builder/SegmentBuilder";
 import { CustomerSingleView } from "./components/customer-view/CustomerSingleView";
 import { CorporateSingleView } from "./components/customer-view/CorporateSingleView";
+import { SavedSegments } from "./components/saved-segments/SavedSegments";
 import { useSegmentStore } from "./store/segmentStore";
 import type { Brand } from "./types/segment";
 
-type View = "segmentation" | "single_view" | "corporate_view";
+type View = "segmentation" | "saved_segments" | "single_view" | "corporate_view";
 
 function App() {
   const { setBrands, fetchCatalog, catalogLoaded } = useSegmentStore();
@@ -47,11 +48,17 @@ function App() {
       setView(target === "corporate_view" ? "corporate_view" : "single_view");
     };
     window.addEventListener("csv:navigate", handler);
-    return () => window.removeEventListener("csv:navigate", handler);
+    const toSeg = () => setView("segmentation");
+    window.addEventListener("nav:segmentation", toSeg);
+    return () => {
+      window.removeEventListener("csv:navigate", handler);
+      window.removeEventListener("nav:segmentation", toSeg);
+    };
   }, []);
 
   const tabs: { key: View; label: string }[] = [
     { key: "segmentation", label: "Segmentation" },
+    { key: "saved_segments", label: "Saved Segments" },
     { key: "single_view", label: "Customer Single View" },
     { key: "corporate_view", label: "Corporate Single View" },
   ];
@@ -78,6 +85,7 @@ function App() {
       </div>
 
       {view === "segmentation" && <SegmentBuilder />}
+      {view === "saved_segments" && <SavedSegments />}
       {view === "single_view" && <CustomerSingleView />}
       {view === "corporate_view" && <CorporateSingleView />}
     </div>

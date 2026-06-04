@@ -134,6 +134,7 @@ interface SegmentBuilderState {
   toggleGroupOperator: (groupId: string) => void;
   resetRules: () => void;
   loadRules: (rules: ConditionGroup) => void;
+  loadSavedSegment: (seg: any) => void;
 
   // Export
   getSegmentDefinition: () => SegmentDefinition;
@@ -360,6 +361,30 @@ export const useSegmentStore = create<SegmentBuilderState>((set, get) => ({
 
   loadRules: (rules) => set({ rules, isDirty: false }),
 
+  loadSavedSegment: (seg) => {
+    const addIds = (node: any): any => {
+      const id = generateId();
+      if (node && (node.type === "group" || node.conditions)) {
+        return {
+          type: "group",
+          id,
+          logical_operator: node.logical_operator || "and",
+          conditions: (node.conditions || []).map(addIds),
+        };
+      }
+      return { ...node, id };
+    };
+    const root = seg?.rules?.root || seg?.rules || createEmptyGroup();
+    set({
+      selectedBrandCode: seg?.brand_code || "spencers",
+      segmentName: seg?.name || "",
+      segmentDescription: seg?.description || "",
+      rules: addIds(root),
+      audienceCount: seg?.audience_count ?? null,
+      isDirty: false,
+    });
+  },
+
   getSegmentDefinition: () => {
     const { rules, rankConfig, splitConfig, setOperation } = get();
     // Strip client-side IDs for API submission
@@ -417,8 +442,9 @@ export const useSegmentStore = create<SegmentBuilderState>((set, get) => ({
         isEstimating: false,
       });
 
-      // Also trigger summary fetch
+      // Also trigger summary + customer preview automatically
       get().fetchSummary();
+      get().previewAudience();
     } catch (err) {
       console.error("Failed to estimate audience:", err);
       set({ isEstimating: false });

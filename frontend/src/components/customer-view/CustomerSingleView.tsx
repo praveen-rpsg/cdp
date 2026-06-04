@@ -119,6 +119,65 @@ const ChannelSplitTable: React.FC<{ b: Record<string, any> }> = ({ b }) => {
   );
 };
 
+/* ── Behavioral Insights (promo / rhythm / RFM / basket) ───── */
+const Stat: React.FC<{ label: string; value: React.ReactNode; sub?: string }> = ({ label, value, sub }) => (
+  <div className="bg-gray-50 rounded-lg p-3 border border-gray-100">
+    <div className="text-[10px] text-gray-400 uppercase tracking-wider truncate">{label}</div>
+    <div className="text-base font-bold text-gray-800 mt-0.5">{value}</div>
+    {sub && <div className="text-[10px] text-gray-400 mt-0.5">{sub}</div>}
+  </div>
+);
+
+const Badge: React.FC<{ text: string; color: string }> = ({ text, color }) => (
+  <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold text-white" style={{ backgroundColor: color }}>
+    {text}
+  </span>
+);
+
+const pct = (n: number | null | undefined, d: number | null | undefined) =>
+  n != null && d ? (n / d) * 100 : null;
+const showPct = (v: number | null) => (v == null ? "—" : v.toFixed(0) + "%");
+
+const BehavioralInsights: React.FC<{ b: Record<string, any> }> = ({ b }) => {
+  const bills = b.total_bills ?? 0;
+  const promoShare = pct(b.promo_bill_count, bills);
+  const returnShare = pct(b.return_bill_count, bills);
+  const weekendShare = pct(b.weekend_bill_count, bills);
+  const discountShare = pct(b.total_discount, (b.total_spend ?? 0) + (b.total_discount ?? 0));
+  const avgGap = b.tenure_days && b.total_visits ? b.tenure_days / b.total_visits : null;
+
+  const badges: { text: string; color: string }[] = [];
+  if (promoShare != null && promoShare >= 30) badges.push({ text: "Deal Seeker", color: "#ea580c" });
+  else if (promoShare != null && promoShare < 10) badges.push({ text: "Full-Price Shopper", color: "#16a34a" });
+  if (weekendShare != null && weekendShare >= 55) badges.push({ text: "Weekend Shopper", color: "#7c3aed" });
+  if (returnShare != null && returnShare >= 15) badges.push({ text: "Frequent Returner", color: "#dc2626" });
+  if ((b.distinct_store_count ?? 0) <= 1 && bills > 1) badges.push({ text: "Single-Store Loyal", color: "#2563eb" });
+
+  const rfm = [b.rfm_recency_score, b.rfm_frequency_score, b.rfm_monetary_score];
+  const rfmStr = rfm.every((x) => x == null) ? "—" : `${rfm[0] ?? "–"} / ${rfm[1] ?? "–"} / ${rfm[2] ?? "–"}`;
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">🧭 Behavioral Insights</h3>
+        {badges.map((bd) => <Badge key={bd.text} {...bd} />)}
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+        <Stat label="RFM (R/F/M)" value={rfmStr} />
+        <Stat label="Promo Bills" value={showPct(promoShare)} sub={`${fmtNum(b.promo_bill_count)} of ${fmtNum(bills)}`} />
+        <Stat label="Discount Share" value={showPct(discountShare)} sub={fmtINR(b.total_discount)} />
+        <Stat label="Return Rate" value={showPct(returnShare)} sub={`${fmtNum(b.return_bill_count)} returns`} />
+        <Stat label="Weekend Bills" value={showPct(weekendShare)} />
+        <Stat label="Active Months" value={fmtNum(b.distinct_months)} />
+        <Stat label="Avg Days Between Visits" value={avgGap == null ? "—" : Math.round(avgGap)} />
+        <Stat label="Stores Visited" value={fmtNum(b.distinct_store_count)} />
+        <Stat label="Distinct Articles" value={fmtNum(b.distinct_article_count)} />
+        <Stat label="Avg Items / Bill" value={b.avg_items_per_bill == null ? "—" : Number(b.avg_items_per_bill).toFixed(1)} />
+      </div>
+    </div>
+  );
+};
+
 /* ══════════════════════════════════════════════════════════════ */
 export const CustomerSingleView: React.FC = () => {
   const { brands, selectedBrandCode, setSelectedBrand, pendingSingleView, setPendingSingleView } =
@@ -285,6 +344,9 @@ export const CustomerSingleView: React.FC = () => {
 
           {/* Omnichannel / Channel Split */}
           <ChannelSplitTable b={b} />
+
+          {/* Behavioral Insights */}
+          {data.behavioral && <BehavioralInsights b={b} />}
 
           {/* Row 2: Brand Propensity + Category Propensity */}
           {prop && prop.segments.length > 0 && (
