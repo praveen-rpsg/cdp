@@ -40,15 +40,20 @@ const AudiencePreviewPanel: React.FC = () => {
         <button
           onClick={previewAudience}
           disabled={isPreviewing || !selectedBrandCode}
-          className="px-2.5 py-1 text-xs bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-40 active:scale-95 transition"
+          className="px-2.5 py-1 text-xs bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 disabled:opacity-40 active:scale-95 transition"
+          title="Refresh preview"
         >
-          {isPreviewing ? "Loading…" : "Preview Customers"}
+          {isPreviewing ? "Loading…" : "↻ Refresh"}
         </button>
       </div>
 
+      {isPreviewing && previewProfiles.length === 0 && (
+        <p className="text-xs text-gray-400">Loading matching profiles…</p>
+      )}
+
       {previewProfiles.length === 0 && !isPreviewing && (
         <p className="text-xs text-gray-400 leading-relaxed">
-          Click "Preview Customers" to list matching profiles. Then open any
+          Estimate an audience to preview matching profiles here, then open any
           customer's 360° single view.
         </p>
       )}

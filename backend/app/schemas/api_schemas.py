@@ -62,6 +62,92 @@ class SegmentListResponse(BaseModel):
 
 
 # =============================================================================
+# SAVED SEGMENTS REPOSITORY SCHEMAS
+# =============================================================================
+
+class SavedSegmentCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    description: str | None = None
+    business_purpose: str | None = None
+    tags: list[str] = []
+    brand_code: str | None = None
+    rules: dict = Field(..., description="Segment rule tree")
+    created_by: str | None = None
+
+
+class SavedSegmentUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    business_purpose: str | None = None
+    tags: list[str] | None = None
+    rules: dict | None = None
+    brand_code: str | None = None
+    status: str | None = None  # active | archived
+
+
+class SavedSegment(BaseModel):
+    id: str
+    name: str
+    description: str | None = None
+    business_purpose: str | None = None
+    tags: list[str] = []
+    segment_type: str
+    brand_code: str | None = None
+    rules: dict
+    audience_count: int | None = None
+    status: str
+    created_by: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+    last_computed_at: str | None = None
+    parent_segment_id: str | None = None
+    lineage: dict | None = None
+
+
+class SavedSegmentListResponse(BaseModel):
+    segments: list[SavedSegment]
+    total: int
+    page: int
+    page_size: int
+
+
+# =============================================================================
+# RANK & SPLIT SCHEMAS
+# =============================================================================
+
+class RankAttribute(BaseModel):
+    attribute: str
+    weight: float = 1.0
+    order: str = "desc"  # desc = higher value ranks first
+
+
+class SplitGroupInput(BaseModel):
+    name: str = ""
+    percent: float | None = None
+    tags: list[str] = []
+
+
+class RankSplitConstraints(BaseModel):
+    max_count: int | None = None
+    budget: float | None = None
+    cost_per_contact: float | None = None
+
+
+class RankSplitRequest(BaseModel):
+    brand_code: str
+    rules: dict
+    rank: list[RankAttribute] = []
+    splits: list[SplitGroupInput] = Field(..., min_length=1)
+    constraints: RankSplitConstraints | None = None
+
+
+class RankSplitSaveRequest(RankSplitRequest):
+    base_name: str = Field(..., min_length=1)
+    created_by: str | None = None
+    parent_segment_id: str | None = None
+
+
+# =============================================================================
 # AUDIENCE SCHEMAS
 # =============================================================================
 

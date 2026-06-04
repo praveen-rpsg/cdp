@@ -11,7 +11,12 @@ from app.api.v1.brands import router as brands_router
 from app.api.v1.customers import router as customers_router
 from app.api.v1.segments import router as segments_router
 from app.core.config import settings
-from app.services.segmentation.service import close_resources, ensure_propensity_tables, init_resources
+from app.services.segmentation.service import (
+    close_resources,
+    ensure_propensity_tables,
+    ensure_segments_table,
+    init_resources,
+)
 
 
 @asynccontextmanager
@@ -19,6 +24,7 @@ async def lifespan(app: FastAPI):
     """Open the DB pool and Redis on startup; close them on shutdown."""
     await init_resources()
     await ensure_propensity_tables()
+    await ensure_segments_table()
     yield
     await close_resources()
 
