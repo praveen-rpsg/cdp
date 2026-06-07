@@ -124,6 +124,41 @@ class CustomerViewService:
                 await cur.execute(sql, params)
                 return [dict(r) for r in await cur.fetchall()]
 
+    async def search_customers(self, brand_code: str, q: str, limit: int = 10) -> list[dict]:
+        """Type-ahead search: match partial mobile, id, or name. Returns up to `limit`."""
+        q = (q or "").strip()
+        if len(q) < 3:
+            return []
+        like = f"%{q}%"
+        try:
+            if brand_code == "corporate":
+                sql = (
+                    f"SELECT r1_id AS id, mobile, "
+                    f"COALESCE(spn_display_name, nbl_display_name) AS name "
+                    f"FROM {CORPORATE_TABLE} "
+                    f"WHERE mobile ILIKE %s OR r1_id ILIKE %s "
+                    f"ORDER BY mobile LIMIT %s"
+                )
+                rows = await self._query(sql, (like, like, int(limit)))
+            else:
+                if brand_code not in BRAND_SCHEMA_CONFIG:
+                    return []
+                tbl_p = BRAND_SCHEMA_CONFIG[brand_code]["unified_profiles"]
+                sql = (
+                    f"SELECT unified_id AS id, canonical_mobile AS mobile, display_name AS name "
+                    f"FROM {tbl_p} "
+                    f"WHERE canonical_mobile ILIKE %s OR unified_id ILIKE %s OR display_name ILIKE %s "
+                    f"ORDER BY canonical_mobile NULLS LAST LIMIT %s"
+                )
+                rows = await self._query(sql, (like, like, like, int(limit)))
+        except Exception as e:
+            logger.warning(f"customer search failed: {e}")
+            return []
+        return [
+            {"id": _s(r.get("id")), "mobile": _s(r.get("mobile")), "name": _s(r.get("name"))}
+            for r in rows
+        ]
+
     async def get_single_view(
         self, customer_id: str | None, mobile: str | None, brand_code: str
     ) -> CustomerSingleViewResponse:
@@ -172,8 +207,23 @@ class CustomerViewService:
             logger.debug(f"single-view cache hit: {cache_key}")
             return CustomerSingleViewResponse(**cached)
 
+        # Cross-brand RPSG id (r1_id) — matched on mobile, lets the user jump to CorpSV.
+        rpsg_id = None
+        if mobile_val:
+            try:
+                rid_rows = await self._query(
+                    f"SELECT r1_id FROM {CORPORATE_TABLE} "
+                    "WHERE RIGHT(mobile, 10) = RIGHT(%s, 10) LIMIT 1",
+                    (mobile_val,),
+                )
+                if rid_rows:
+                    rpsg_id = _s(rid_rows[0].get("r1_id"))
+            except Exception as e:
+                logger.warning(f"rpsg_id lookup failed: {e}")
+
         identity = IdentityBlock(
             unified_id=uid,
+            rpsg_id=rpsg_id,
             surrogate_id=_s(p.get("surrogate_id")),
             name=_s(p.get("display_name")),
             first_name=_s(p.get("first_name")),

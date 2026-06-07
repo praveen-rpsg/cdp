@@ -19,6 +19,7 @@ from pydantic import BaseModel
 
 class IdentityBlock(BaseModel):
     unified_id: str
+    rpsg_id: str | None = None   # cross-brand RPSG id (r1_id), for jumping to Corporate view
     surrogate_id: str | None = None
     name: str | None = None
     first_name: str | None = None

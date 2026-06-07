@@ -37,6 +37,16 @@ async def get_single_view(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.get("/search")
+async def search_customers(
+    brand_code: str = Query(..., description="spencers | natures_basket | corporate"),
+    q: str = Query(..., description="Partial mobile, id, or name (min 3 chars)"),
+    limit: int = Query(10, ge=1, le=25),
+):
+    """Type-ahead customer search for the single-view search boxes."""
+    return {"results": await service.search_customers(brand_code=brand_code, q=q, limit=limit)}
+
+
 @router.get("/corporate-view", response_model=CorporateSingleViewResponse)
 async def get_corporate_view(
     r1_id: str | None = Query(None, description="RPSG universal ID (exact)"),

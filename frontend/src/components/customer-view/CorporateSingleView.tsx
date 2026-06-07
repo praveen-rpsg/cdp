@@ -8,6 +8,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useSegmentStore } from "../../store/segmentStore";
+import { CustomerAutocomplete } from "./CustomerAutocomplete";
 
 interface BrandPanel {
   present: boolean;
@@ -222,14 +223,18 @@ export const CorporateSingleView: React.FC = () => {
         </div>
         <div className="flex-1">
           <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1.5">
-            {searchBy === "mobile" ? "Mobile Number" : "RPSG ID"}
+            Search Customer <span className="font-normal normal-case text-gray-400">(type 3+ digits / chars)</span>
           </label>
-          <input
-            type="text"
+          <CustomerAutocomplete
+            brandCode="corporate"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && doSearch()}
-            placeholder={searchBy === "mobile" ? "e.g., 9830159393" : "e.g., 5JGS"}
+            onChange={setQuery}
+            onPick={(p) => {
+              if (p.mobile) { setSearchBy("mobile"); setQuery(p.mobile); doSearch(p.mobile, "mobile"); }
+              else { setSearchBy("id"); setQuery(p.id); doSearch(p.id, "id"); }
+            }}
+            onEnter={() => doSearch()}
+            placeholder="Start typing a mobile number or RPSG ID…"
             className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none font-mono"
           />
         </div>
