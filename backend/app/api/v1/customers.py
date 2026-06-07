@@ -45,3 +45,20 @@ async def get_corporate_view(
     if not r1_id and not mobile:
         raise HTTPException(status_code=400, detail="Provide r1_id or mobile")
     return await service.get_corporate_view(r1_id=r1_id, mobile=mobile)
+
+
+@router.delete("/single-view/cache", status_code=204)
+async def invalidate_single_view_cache(
+    brand_code: str = Query(...),
+    customer_id: str = Query(..., description="unified_id whose cache entry to evict"),
+):
+    """Evict a cached single-view profile (e.g. after a manual data correction)."""
+    await service._cache_del(f"sv:{brand_code}:{customer_id}")
+
+
+@router.delete("/corporate-view/cache", status_code=204)
+async def invalidate_corporate_view_cache(
+    r1_id: str = Query(..., description="r1_id whose cache entry to evict"),
+):
+    """Evict a cached corporate-view profile."""
+    await service._cache_del(f"corp:{r1_id}")
