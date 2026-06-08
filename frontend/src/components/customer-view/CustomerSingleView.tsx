@@ -8,6 +8,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useSegmentStore } from "../../store/segmentStore";
+import { CustomerAutocomplete } from "./CustomerAutocomplete";
 
 /* ── Types ─────────────────────────────────────────────────── */
 interface SegmentScore {
@@ -180,7 +181,7 @@ const BehavioralInsights: React.FC<{ b: Record<string, any> }> = ({ b }) => {
 
 /* ══════════════════════════════════════════════════════════════ */
 export const CustomerSingleView: React.FC = () => {
-  const { brands, selectedBrandCode, setSelectedBrand, pendingSingleView, setPendingSingleView } =
+  const { brands, selectedBrandCode, setSelectedBrand, pendingSingleView, setPendingSingleView, setPendingCorporateView } =
     useSegmentStore();
   const [searchBy, setSearchBy] = useState<"mobile" | "id">("mobile");
   const [query, setQuery] = useState("");
@@ -236,6 +237,11 @@ export const CustomerSingleView: React.FC = () => {
 
   const maxNorm = Math.max(0.0001, ...(prop?.segments.map((s) => s.normalized_score || 0) || [0]));
 
+  const openInCorporate = (rpsgId: string) => {
+    setPendingCorporateView({ mobile: id.mobile || "", r1_id: rpsgId });
+    window.dispatchEvent(new CustomEvent("csv:navigate", { detail: { target: "corporate_view" } }));
+  };
+
   return (
     <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-5">
       {/* Search bar */}
@@ -253,14 +259,18 @@ export const CustomerSingleView: React.FC = () => {
         </div>
         <div className="flex-1">
           <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1.5">
-            {searchBy === "mobile" ? "Mobile Number" : "Unified ID"}
+            Search Customer <span className="font-normal normal-case text-gray-400">(type 3+ digits / chars)</span>
           </label>
-          <input
-            type="text"
+          <CustomerAutocomplete
+            brandCode={brand}
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && doSearch(query, searchBy, brand)}
-            placeholder={searchBy === "mobile" ? "e.g., 9876543210" : "e.g., 0aa0cfa0f9dc92d204b332f44844be4e"}
+            onChange={setQuery}
+            onPick={(p) => {
+              if (p.mobile) { setSearchBy("mobile"); setQuery(p.mobile); doSearch(p.mobile, "mobile", brand); }
+              else { setSearchBy("id"); setQuery(p.id); doSearch(p.id, "id", brand); }
+            }}
+            onEnter={() => doSearch(query, searchBy, brand)}
+            placeholder="Start typing a mobile number or ID…"
             className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none font-mono"
           />
         </div>
@@ -302,6 +312,22 @@ export const CustomerSingleView: React.FC = () => {
             <Card title="Key Attributes" icon="👤">
               <Field label="Name" value={id.name} />
               <Field label="Unified ID" value={<span className="font-mono text-xs">{id.unified_id}</span>} />
+              <Field
+                label="RPSG ID"
+                value={
+                  id.rpsg_id ? (
+                    <button
+                      onClick={() => openInCorporate(id.rpsg_id)}
+                      className="font-mono text-xs text-purple-700 hover:underline inline-flex items-center gap-1"
+                      title="Open this customer in Corporate Single View"
+                    >
+                      {id.rpsg_id} <span className="text-[10px]">↗</span>
+                    </button>
+                  ) : (
+                    <span className="text-gray-400">—</span>
+                  )
+                }
+              />
               <Field label="Mobile" value={id.mobile} />
               <Field label="Email" value={id.email} />
               <Field label="DOB" value={id.dob} />

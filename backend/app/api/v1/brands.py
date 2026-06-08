@@ -21,22 +21,6 @@ BRANDS = [
         "is_active": True,
     },
     {
-        "id": "brand-fmcg-002",
-        "code": "fmcg",
-        "name": "FMCG",
-        "channels": ["d2c", "b2b"],
-        "business_model": "fmcg",
-        "is_active": True,
-    },
-    {
-        "id": "brand-cesc-003",
-        "code": "power_cesc",
-        "name": "Power CESC",
-        "channels": ["b2c", "b2b"],
-        "business_model": "utility",
-        "is_active": True,
-    },
-    {
         "id": "brand-nb-004",
         "code": "natures_basket",
         "name": "Nature's Basket",

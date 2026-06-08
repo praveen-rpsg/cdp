@@ -10,6 +10,8 @@ Lookup is by mobile number (last-10-digit match) or by unified_id.
 
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 
 from app.schemas.customer_view import (
@@ -51,6 +53,9 @@ _BRAND_PROP_PREFIX: dict[str, str] = {
 }
 
 
+_SV_TTL = 3600   # 1-hour cache for single view profiles
+
+
 def _f(v) -> float | None:
     if v is None:
         return None
@@ -65,6 +70,39 @@ def _s(v) -> str | None:
 
 
 class CustomerViewService:
+    # ------------------------------------------------------------------
+    # Redis helpers (gracefully degrade when Redis is unavailable)
+    # ------------------------------------------------------------------
+
+    async def _cache_get(self, key: str) -> dict | None:
+        redis = _seg_mod._redis
+        if redis is None:
+            return None
+        try:
+            raw = await redis.get(key)
+            return json.loads(raw) if raw else None
+        except Exception as exc:
+            logger.debug(f"cache get failed ({key}): {exc}")
+            return None
+
+    async def _cache_set(self, key: str, value: dict, ttl: int = _SV_TTL) -> None:
+        redis = _seg_mod._redis
+        if redis is None:
+            return
+        try:
+            await redis.setex(key, ttl, json.dumps(value, default=str))
+        except Exception as exc:
+            logger.debug(f"cache set failed ({key}): {exc}")
+
+    async def _cache_del(self, *keys: str) -> None:
+        redis = _seg_mod._redis
+        if redis is None:
+            return
+        try:
+            await redis.delete(*keys)
+        except Exception as exc:
+            logger.debug(f"cache del failed: {exc}")
+
     async def _query(self, sql: str, params: tuple = ()) -> list[dict]:
         """Parameterized query via the segmentation module's shared async pool."""
         from psycopg.rows import dict_row
@@ -85,6 +123,41 @@ class CustomerViewService:
             async with conn.cursor() as cur:
                 await cur.execute(sql, params)
                 return [dict(r) for r in await cur.fetchall()]
+
+    async def search_customers(self, brand_code: str, q: str, limit: int = 10) -> list[dict]:
+        """Type-ahead search: match partial mobile, id, or name. Returns up to `limit`."""
+        q = (q or "").strip()
+        if len(q) < 3:
+            return []
+        like = f"%{q}%"
+        try:
+            if brand_code == "corporate":
+                sql = (
+                    f"SELECT r1_id AS id, mobile, "
+                    f"COALESCE(spn_display_name, nbl_display_name) AS name "
+                    f"FROM {CORPORATE_TABLE} "
+                    f"WHERE mobile ILIKE %s OR r1_id ILIKE %s "
+                    f"ORDER BY mobile LIMIT %s"
+                )
+                rows = await self._query(sql, (like, like, int(limit)))
+            else:
+                if brand_code not in BRAND_SCHEMA_CONFIG:
+                    return []
+                tbl_p = BRAND_SCHEMA_CONFIG[brand_code]["unified_profiles"]
+                sql = (
+                    f"SELECT unified_id AS id, canonical_mobile AS mobile, display_name AS name "
+                    f"FROM {tbl_p} "
+                    f"WHERE canonical_mobile ILIKE %s OR unified_id ILIKE %s OR display_name ILIKE %s "
+                    f"ORDER BY canonical_mobile NULLS LAST LIMIT %s"
+                )
+                rows = await self._query(sql, (like, like, like, int(limit)))
+        except Exception as e:
+            logger.warning(f"customer search failed: {e}")
+            return []
+        return [
+            {"id": _s(r.get("id")), "mobile": _s(r.get("mobile")), "name": _s(r.get("name"))}
+            for r in rows
+        ]
 
     async def get_single_view(
         self, customer_id: str | None, mobile: str | None, brand_code: str
@@ -127,8 +200,30 @@ class CustomerViewService:
         uid = p["unified_id"]
         mobile_val = p.get("canonical_mobile")
 
+        # ── Cache check (keyed by resolved uid, brand-scoped) ───────────────────
+        cache_key = f"sv:{brand_code}:{uid}"
+        cached = await self._cache_get(cache_key)
+        if cached is not None:
+            logger.debug(f"single-view cache hit: {cache_key}")
+            return CustomerSingleViewResponse(**cached)
+
+        # Cross-brand RPSG id (r1_id) — matched on mobile, lets the user jump to CorpSV.
+        rpsg_id = None
+        if mobile_val:
+            try:
+                rid_rows = await self._query(
+                    f"SELECT r1_id FROM {CORPORATE_TABLE} "
+                    "WHERE RIGHT(mobile, 10) = RIGHT(%s, 10) LIMIT 1",
+                    (mobile_val,),
+                )
+                if rid_rows:
+                    rpsg_id = _s(rid_rows[0].get("r1_id"))
+            except Exception as e:
+                logger.warning(f"rpsg_id lookup failed: {e}")
+
         identity = IdentityBlock(
             unified_id=uid,
+            rpsg_id=rpsg_id,
             surrogate_id=_s(p.get("surrogate_id")),
             name=_s(p.get("display_name")),
             first_name=_s(p.get("first_name")),
@@ -172,7 +267,18 @@ class CustomerViewService:
              WHERE customer_id = %s
              LIMIT 1
         """
-        ba_rows = await self._query(ba_sql, (uid,))
+
+        # ── Fan out all 5 independent queries in parallel ────────────────────────
+        ba_coro = self._query(ba_sql, (uid,))
+        prop_coro = self._fetch_propensity(uid, brand_code, tbl_prop)
+        trend_coro = self._fetch_spend_trend(mobile_val, tbl_bt) if mobile_val else asyncio.sleep(0, result=[])
+        articles_coro = self._fetch_top_articles(mobile_val, tbl_bt) if mobile_val else asyncio.sleep(0, result=[])
+        cat_coro = self._fetch_category_spend(mobile_val, tbl_bt) if mobile_val else asyncio.sleep(0, result=[])
+
+        ba_rows, propensity, spend_trend, top_articles, category_spend = await asyncio.gather(
+            ba_coro, prop_coro, trend_coro, articles_coro, cat_coro
+        )
+
         behavioral = None
         if ba_rows:
             b = ba_rows[0]
@@ -215,19 +321,7 @@ class CustomerViewService:
                 rfm_monetary_score=b.get("rfm_monetary_score"),
             )
 
-        # ── Propensity ──────────────────────────────────────────────────────────
-        propensity = await self._fetch_propensity(uid, brand_code, tbl_prop)
-
-        # ── Trend / articles / category spend (from bt, mobile-keyed) ────────────
-        spend_trend: list[SpendTrendPoint] = []
-        top_articles: list[TopArticle] = []
-        category_spend: list[CategorySpend] = []
-        if mobile_val:
-            spend_trend = await self._fetch_spend_trend(mobile_val, tbl_bt)
-            top_articles = await self._fetch_top_articles(mobile_val, tbl_bt)
-            category_spend = await self._fetch_category_spend(mobile_val, tbl_bt)
-
-        return CustomerSingleViewResponse(
+        result = CustomerSingleViewResponse(
             found=True,
             brand_code=brand_code,
             identity=identity,
@@ -238,6 +332,8 @@ class CustomerViewService:
             top_articles=top_articles,
             location_propensity=category_spend,
         )
+        await self._cache_set(cache_key, result.model_dump())
+        return result
 
     async def _fetch_propensity(
         self, uid: str, brand_code: str, tbl_prop: str
@@ -394,6 +490,15 @@ class CustomerViewService:
             return CorporateSingleViewResponse(found=False)
 
         c = rows[0]
+        resolved_r1_id = _s(c.get("r1_id")) or ""
+
+        # ── Cache check (keyed by r1_id) ─────────────────────────────────────────
+        cache_key = f"corp:{resolved_r1_id}"
+        cached = await self._cache_get(cache_key)
+        if cached is not None:
+            logger.debug(f"corporate-view cache hit: {cache_key}")
+            return CorporateSingleViewResponse(**cached)
+
         presence = _s(c.get("rpsg_brand_presence")) or ""
         is_spn = "spencer" in presence.lower()
         is_nbl = "nbl" in presence.lower()
@@ -447,19 +552,22 @@ class CustomerViewService:
         total_spend = spn_spend + nbl_spend
         total_bills = spn_bills + nbl_bills
 
-        # Preferred brand = higher lifetime spend.
         pfx_pref = "spn" if spn_spend >= nbl_spend else "nbl"
         pref_brand_name = "Spencers" if pfx_pref == "spn" else "Nature's Basket"
 
-        # Preferred channel by combined store vs online spend.
         store_sp = (_f(c.get("spn_store_spend")) or 0.0) + (_f(c.get("nbl_store_spend")) or 0.0)
         online_sp = (_f(c.get("spn_online_spend")) or 0.0) + (_f(c.get("nbl_online_spend")) or 0.0)
         pref_channel = None
         if store_sp or online_sp:
             pref_channel = "In-Store" if store_sp >= online_sp else "Online"
 
-        # Preferred category from actual transaction spend (both brands).
-        pref_category = await self._fetch_preferred_category(_s(c.get("mobile")))
+        mobile_val = _s(c.get("mobile"))
+
+        # ── Fan out the two transaction-heavy queries in parallel ─────────────────
+        pref_category, timeline = await asyncio.gather(
+            self._fetch_preferred_category(mobile_val),
+            self._fetch_corporate_timeline(mobile_val),
+        )
 
         insights = CorporateInsights(
             lifetime_value=total_spend or None,
@@ -484,10 +592,7 @@ class CustomerViewService:
             lifecycle_stage=_s(c.get(f"{pfx_pref}_lifecycle_stage")),
         )
 
-        # ── Activity timeline (transactions across both brands) ──────────────────
-        timeline = await self._fetch_corporate_timeline(_s(c.get("mobile")))
-
-        return CorporateSingleViewResponse(
+        result = CorporateSingleViewResponse(
             found=True,
             identity=identity,
             insights=insights,
@@ -496,6 +601,8 @@ class CustomerViewService:
             spencers=_panel("spn", is_spn),
             nbl=_panel("nbl", is_nbl),
         )
+        await self._cache_set(cache_key, result.model_dump())
+        return result
 
     async def _fetch_preferred_category(self, mobile: str | None) -> str | None:
         if not mobile:
