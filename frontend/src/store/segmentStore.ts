@@ -181,7 +181,7 @@ function findGroup(
 export const useSegmentStore = create<SegmentBuilderState>((set, get) => ({
   segmentName: "",
   segmentDescription: "",
-  segmentType: "dynamic",
+  segmentType: "static",
   rules: createEmptyGroup("and"),
   selectedBrandCode: null,
   brands: [],
