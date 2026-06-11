@@ -2,7 +2,8 @@
  * Corporate Customer Single View — cross-brand comparison.
  *
  * Corporate has no propensity or line-item data, so this view shows
- * identity + RPSG lifetime metrics + side-by-side Spencers vs NBL panels.
+ * identity + RPSG lifetime metrics + per-brand detail tabs (Spencers, NBL,
+ * plus not-yet-onboarded brands as placeholder tabs).
  * Lookup by RPSG ID (r1_id) or mobile number.
  */
 
@@ -117,43 +118,118 @@ const MetricTile: React.FC<{ label: string; value: React.ReactNode }> = ({ label
   </div>
 );
 
-const BrandColumn: React.FC<{ title: string; color: string; panel?: BrandPanel | null }> = ({
-  title, color, panel,
-}) => {
+/* ── Brand tabs registry — add future RPSG brands here ─────────────
+   `key` maps to the field on the CorporateView response holding that
+   brand's panel data (null for brands not yet onboarded). */
+const BRAND_TABS: {
+  key: "spencers" | "nbl" | null;
+  title: string;
+  color: string;
+  onboarded: boolean;
+}[] = [
+  { key: "spencers", title: "Spencers",         color: "#E0402E", onboarded: true },
+  { key: "nbl",      title: "Nature's Basket",  color: "#16a34a", onboarded: true },
+  { key: null,       title: "CESC",             color: "#2563eb", onboarded: false },
+  { key: null,       title: "Naturali",         color: "#db2777", onboarded: false },
+];
+
+const BrandPanelBody: React.FC<{ title: string; panel?: BrandPanel | null }> = ({ title, panel }) => {
   if (!panel?.present) {
     return (
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-        <h3 className="text-sm font-bold mb-2" style={{ color }}>{title}</h3>
-        <p className="text-xs text-gray-400 py-6 text-center">Not a {title} customer.</p>
+      <div className="py-10 text-center">
+        <div className="text-2xl mb-2">🛒</div>
+        <p className="text-sm text-gray-500 font-medium">Not a {title} customer</p>
+        <p className="text-xs text-gray-400 mt-1">No transactions or profile found for this brand.</p>
       </div>
     );
   }
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-      <h3 className="text-sm font-bold mb-3 flex items-center gap-2" style={{ color }}>
-        <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color }} />
-        {title}
-      </h3>
-      <Field label="Name" value={panel.display_name} />
-      <Field label="City" value={panel.city} />
-      <Field label="Lifecycle" value={panel.lifecycle_stage} />
-      <Field label="Segment (L2)" value={panel.l2_segment} />
-      <div className="my-2 border-t border-gray-100" />
-      <Field label="Total Spend" value={fmtINR(panel.total_spend)} />
-      <Field label="Total Bills" value={fmtNum(panel.total_bills)} />
-      <Field label="Total Visits" value={fmtNum(panel.total_visits)} />
-      <Field label="Spend / Bill" value={fmtINR(panel.spend_per_bill)} />
-      <Field label="Recency (days)" value={fmtNum(panel.recency_days)} />
-      <div className="my-2 border-t border-gray-100" />
-      <Field label="First Bill" value={panel.first_bill_date} />
-      <Field label="Last Bill" value={panel.last_bill_date} />
-      <Field label="Fav Store" value={panel.fav_store_name} />
-      <Field label="Store Spend" value={fmtINR(panel.store_spend)} />
-      <Field label="Online Spend" value={fmtINR(panel.online_spend)} />
-      <div className="my-2 border-t border-gray-100" />
-      <Field label="DND" value={panel.dnd} />
-      <Field label="Email Opt-In" value={panel.accepts_email_marketing} />
-      <Field label="SMS Opt-In" value={panel.accepts_sms_marketing} />
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8">
+      <div>
+        <Field label="Name" value={panel.display_name} />
+        <Field label="City" value={panel.city} />
+        <Field label="Lifecycle" value={panel.lifecycle_stage} />
+        <Field label="Segment (L2)" value={panel.l2_segment} />
+        <Field label="Fav Store" value={panel.fav_store_name} />
+        <Field label="Fav Day" value={panel.fav_day} />
+      </div>
+      <div>
+        <Field label="Total Spend" value={fmtINR(panel.total_spend)} />
+        <Field label="Total Bills" value={fmtNum(panel.total_bills)} />
+        <Field label="Total Visits" value={fmtNum(panel.total_visits)} />
+        <Field label="Spend / Bill" value={fmtINR(panel.spend_per_bill)} />
+        <Field label="Store Spend" value={fmtINR(panel.store_spend)} />
+        <Field label="Online Spend" value={fmtINR(panel.online_spend)} />
+      </div>
+      <div>
+        <Field label="First Bill" value={panel.first_bill_date} />
+        <Field label="Last Bill" value={panel.last_bill_date} />
+        <Field label="Recency (days)" value={fmtNum(panel.recency_days)} />
+        <Field label="DND" value={panel.dnd} />
+        <Field label="Email Opt-In" value={panel.accepts_email_marketing} />
+        <Field label="SMS Opt-In" value={panel.accepts_sms_marketing} />
+      </div>
+    </div>
+  );
+};
+
+const NotOnboarded: React.FC<{ title: string }> = ({ title }) => (
+  <div className="py-10 text-center">
+    <div className="text-2xl mb-2">🚧</div>
+    <p className="text-sm text-gray-500 font-medium">{title} is not onboarded right now</p>
+    <p className="text-xs text-gray-400 mt-1">This brand will appear here once it's integrated into Unify 360.</p>
+  </div>
+);
+
+const BrandTabs: React.FC<{ data: CorporateView }> = ({ data }) => {
+  const panelFor = (key: "spencers" | "nbl" | null): BrandPanel | null | undefined =>
+    key === "spencers" ? data.spencers : key === "nbl" ? data.nbl : null;
+
+  // Default to the first brand the customer actually has data in.
+  const firstWithData = BRAND_TABS.findIndex((t) => t.key && panelFor(t.key)?.present);
+  const [active, setActive] = useState(firstWithData >= 0 ? firstWithData : 0);
+
+  // New search result → re-derive the default tab.
+  useEffect(() => {
+    setActive(firstWithData >= 0 ? firstWithData : 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data]);
+
+  const tab = BRAND_TABS[active];
+  const panel = panelFor(tab.key);
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
+      <div className="flex border-b border-gray-200 overflow-x-auto">
+        {BRAND_TABS.map((t, i) => {
+          const p = panelFor(t.key);
+          const isActive = i === active;
+          return (
+            <button
+              key={t.title}
+              onClick={() => setActive(i)}
+              className={`flex items-center gap-2 px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition ${
+                isActive ? "text-gray-900" : "text-gray-400 hover:text-gray-600"
+              }`}
+              style={{ borderBottomColor: isActive ? t.color : "transparent" }}
+            >
+              <span
+                className="w-2 h-2 rounded-full flex-shrink-0"
+                style={{ backgroundColor: t.onboarded && p?.present ? t.color : "#d1d5db" }}
+              />
+              {t.title}
+              {!t.onboarded && (
+                <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-gray-100 text-gray-400 uppercase tracking-wide">
+                  Soon
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+      <div className="p-4">
+        {tab.onboarded ? <BrandPanelBody title={tab.title} panel={panel} /> : <NotOnboarded title={tab.title} />}
+      </div>
     </div>
   );
 };
@@ -403,11 +479,8 @@ export const CorporateSingleView: React.FC = () => {
             </div>
           )}
 
-          {/* Side-by-side brand comparison */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            <BrandColumn title="Spencers" color="#E0402E" panel={data.spencers} />
-            <BrandColumn title="Nature's Basket" color="#16a34a" panel={data.nbl} />
-          </div>
+          {/* Per-brand detail tabs */}
+          <BrandTabs data={data} />
         </>
       )}
     </div>

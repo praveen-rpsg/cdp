@@ -22,11 +22,14 @@ export const CustomerAutocomplete: React.FC<Props> = ({
   const [results, setResults] = useState<Picked[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const justPicked = useRef(false);
+  // Only user keystrokes should trigger the suggestion fetch — programmatic
+  // value changes (deep-links from preview rows, picking a suggestion) must not.
+  const userTyped = useRef(false);
   const boxRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (justPicked.current) { justPicked.current = false; return; }
+    if (!userTyped.current) { setOpen(false); return; }
+    userTyped.current = false;
     const q = value.trim();
     if (q.length < 3) { setResults([]); setOpen(false); return; }
     const t = setTimeout(async () => {
@@ -36,7 +39,15 @@ export const CustomerAutocomplete: React.FC<Props> = ({
           `/api/v1/customers/search?brand_code=${encodeURIComponent(brandCode)}&q=${encodeURIComponent(q)}`
         );
         const d = await r.json();
-        setResults(d.results || []);
+        // Dedupe by customer id — the search can match the same profile
+        // through multiple keys (mobile + id) and return it twice.
+        const seen = new Set<string>();
+        const unique = ((d.results || []) as Picked[]).filter((p) => {
+          if (seen.has(p.id)) return false;
+          seen.add(p.id);
+          return true;
+        });
+        setResults(unique);
         setOpen(true);
       } catch {
         setResults([]);
@@ -57,7 +68,6 @@ export const CustomerAutocomplete: React.FC<Props> = ({
   }, []);
 
   const pick = (p: Picked) => {
-    justPicked.current = true;
     setOpen(false);
     setResults([]);
     onPick(p);
@@ -68,7 +78,7 @@ export const CustomerAutocomplete: React.FC<Props> = ({
       <input
         type="text"
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => { userTyped.current = true; onChange(e.target.value); }}
         onFocus={() => { if (results.length) setOpen(true); }}
         onKeyDown={(e) => {
           if (e.key === "Enter") { setOpen(false); onEnter?.(); }
@@ -81,9 +91,9 @@ export const CustomerAutocomplete: React.FC<Props> = ({
       {open && (results.length > 0 || loading) && (
         <div className="absolute z-30 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-64 overflow-y-auto">
           {loading && <div className="px-3 py-2 text-xs text-gray-400">Searching…</div>}
-          {!loading && results.map((r) => (
+          {!loading && results.map((r, i) => (
             <button
-              key={r.id}
+              key={`${r.id}-${i}`}
               onClick={() => pick(r)}
               className="w-full text-left px-3 py-2 hover:bg-indigo-50 border-b border-gray-50 last:border-0"
             >
