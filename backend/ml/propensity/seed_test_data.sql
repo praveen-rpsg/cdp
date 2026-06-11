@@ -51,8 +51,8 @@ INSERT INTO nb_silver_reverse_etl.customer_propensity_scores_nbl
      nbl_segment_1_normalized_propensity, nbl_segment_2_normalized_propensity,
      nbl_segment_3_normalized_propensity, nbl_segment_4_normalized_propensity)
 VALUES
-    ('REPLACE_WITH_REAL_NBL_ID_1', 0.80, 0.25, 0.10, 0.40,  0.44, 0.14, 0.06, 0.22),
-    ('REPLACE_WITH_REAL_NBL_ID_2', 0.30, 0.70, 0.20, 0.60,  0.17, 0.39, 0.11, 0.33)
+    ('895e563a7d4d12993ffcb0ccd31ea723', 0.80, 0.25, 0.10, 0.40,  0.44, 0.14, 0.06, 0.22),
+    ('4c33f9b3a58ee19f9a28d5a8ca6bede4', 0.30, 0.70, 0.20, 0.60,  0.17, 0.39, 0.11, 0.33)
 ON CONFLICT (customer_id) DO UPDATE SET
     nbl_segment_1_propensity            = EXCLUDED.nbl_segment_1_propensity,
     nbl_segment_2_propensity            = EXCLUDED.nbl_segment_2_propensity,
