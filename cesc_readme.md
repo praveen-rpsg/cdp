@@ -1,33 +1,145 @@
-# CESC implementation notes
+# CESC integration in Unify360
 
-## Purpose
+This document is an onboarding guide to the Power CESC integration in Unify360. It explains the data model, identity rules, backend and frontend paths, segmentation behavior, customer views, Communication Grouping View, testing, and operational boundaries.
 
-This document records the CESC-specific work currently present in this repository. The brand code is `power_cesc`, and the implementation is intended to keep CESC identity and billing segmentation separate from Spencer's, Nature's Basket, and Corporate behavior.
+The application brand code is:
 
-The main objectives are:
+```text
+power_cesc
+```
 
-1. Compile CESC Live Audience rules against the CESC serving view using `cesc_entity_id` as the audience identity.
-2. Expose CESC profile and billing attributes in the catalog and frontend picker.
-3. Support filtering CESC customers by the accounting month in which they had a bill.
-4. Provide an experimental Communication Grouping View that estimates logical communication entities instead of individual customer entities.
+## 1. Integration overview
 
-The Bill AC Month feature is the focused, implemented CESC monthly-billing feature. Communication Grouping View exists as a separate experimental path, but it is not considered properly implemented or production-ready; see the dedicated section below.
+Unify360 uses CESC data for:
 
-## CESC data model and identity
+- Live Audience segmentation.
+- CESC-specific utility, billing, account, payment, lifecycle, and communication attributes.
+- CESC customer search and the single-customer view.
+- An experimental Communication Grouping View that estimates logical communication entities.
 
-The serving source used by the CESC compiler is:
+The integration is brand-gated. CESC behavior must be selected by `brand_code == "power_cesc"`. CESC logic must not become the default path for Spencer's, Nature's Basket, Corporate, or any other brand.
+
+The broad data flow is:
+
+```text
+CESC warehouse / source data
+        |
+        v
+Gold and serving relations
+        |
+        +--> backend catalog and compiler
+        |       |
+        |       +--> estimate, preview, summary APIs
+        |       +--> attribute-values API
+        |       +--> customer search and single view
+        |
+        v
+Frontend brand selector, attribute picker, rule builder, and audience panels
+```
+
+The serving view is the entity-grain segmentation surface. Detail-grain tables, such as the monthly billing table, must be queried with correlated subqueries when a rule needs historical or repeated rows.
+
+## 2. CESC data model
+
+### 2.1 Serving view
+
+The primary CESC segmentation relation is:
 
 ```text
 cesc_serving.customer_360_seg_v
 ```
 
-The ordinary CESC audience unit is the distinct value of:
+It is treated by the active PostgreSQL compiler as a one-row-per-CESC-entity serving view. Representative columns include:
 
 ```text
-cesc_serving.customer_360_seg_v.cesc_entity_id
+cesc_entity_id
+customer_id
+consumer_no
+customer_name
+mobile_number
+email_id
+consumer_account_status
+net_amount
+bill_type
+payment_channel
+payment_method
+first_bill_date
+tenure_days
+tenure_months
+monthly_consumption
+average_consumption
+avg_consumption_3m
+avg_consumption_6m
+avg_consumption_12m
+consumption_bucket
+outstanding_burden_ratio
 ```
 
-The normal CESC count shape is therefore:
+The view also has a `bill_ac_month` value, but that value is the latest available month for an entity. It is not the correct source for asking whether an entity had a bill in an arbitrary historical month.
+
+### 2.2 Gold customer relation
+
+The catalog uses this CESC Gold customer relation for ordinary profile attributes:
+
+```text
+silver_gold.cesc_customer_360
+```
+
+The active segmentation compiler normally queries the serving view, so upstream Gold changes must be reflected in the serving layer before they are expected in audience results.
+
+### 2.3 Monthly billing relation
+
+Historical accounting-month filtering uses:
+
+```text
+silver_gold.cesc_customer_monthly
+```
+
+Important columns and types are:
+
+```text
+cesc_entity_id  text
+bill_ac_month   text       -- fixed-width YYYYMM
+month_start     date
+month_seq       integer
+```
+
+The table is at CESC entity/month grain and has a unique index on:
+
+```text
+(cesc_entity_id, bill_ac_month)
+```
+
+Do not replace this source with `cesc_serving.customer_360_seg_v.bill_ac_month`; that would miss entities whose bill exists in an earlier month.
+
+### 2.4 Grouping decision relation
+
+The experimental Communication Grouping View uses:
+
+```text
+cesc_silver.cesc_bill_only_grouping_decision_20261027
+```
+
+Eligible decision values are:
+
+```text
+PERSON_COMMUNICATION_GROUP
+PERSON_COMMUNICATION_GROUP_EMAIL
+```
+
+The decision relation is joined to the serving view using `consumer_no`. Its `person_communication_group_id` supplies the logical communication-group identifier.
+
+## 3. Identity and counting contract
+
+### 3.1 CESC identity
+
+For CESC segmentation, the identity column is:
+
+```text
+p.cesc_entity_id
+```
+
+The ordinary CESC count shape is:
 
 ```sql
 SELECT COUNT(DISTINCT p.cesc_entity_id) AS audience_count
@@ -35,60 +147,182 @@ FROM cesc_serving.customer_360_seg_v p
 WHERE ...;
 ```
 
-For compiled preview results, the output identity alias remains `customer_id`, while the underlying CESC identity is `p.cesc_entity_id`.
+It is used for:
 
-The CESC compiler is selected by `brand_code == 'power_cesc'`. Other brands continue to use their existing compiler paths and identity columns. The CESC brand configuration points the profile, behavioral, identity-graph, location, and transaction references at the CESC serving source instead of Spencer's or Nature's Basket sources.
+- audience counts;
+- segment output;
+- segment membership operations;
+- CESC preview rows;
+- customer search and single-customer lookup.
 
-## CESC catalog
+The output aliases are part of the API contract:
 
-CESC attributes are declared in `backend/app/schemas/profile_attributes.py` with `applicable_brands=["power_cesc"]`. The catalog includes identity, utility billing, lifecycle, consumption, payment, arrear, and channel attributes such as:
+- count queries return `audience_count`;
+- entity and preview rows return `customer_id`;
+- the underlying CESC identity remains `cesc_entity_id`.
 
-- `cesc.cesc_entity_id`
-- `cesc.customer_id`
-- `cesc.consumer_no`
-- `cesc.consumer_account_status`
-- `cesc.net_amount`
-- `cesc.first_bill_date`
-- `cesc.tenure_days`
-- `cesc.bill_type`
-- `cesc.bill_ac_month`
-- `cesc.payment_channel`
-- `cesc.payment_method`
+Other brands use their own identity conventions. Do not copy a Spencer's `unified_id` join into the CESC compiler.
 
-Catalog entries use CESC source tables and are filtered by applicable brand, so the CESC attributes are available for `power_cesc` without making them universal attributes for other brands.
+### 3.2 Customer search and single-customer view
 
-## Bill AC Month
-
-### Aim
-
-`cesc.bill_ac_month` lets a CESC segment select every entity that had at least one bill in a selected accounting month. The attribute is displayed as **Bill AC Month**, is a string, and uses the fixed-width `YYYYMM` representation, for example `202602`.
-
-### Source
-
-The monthly source is:
+CESC customer search and single-customer logic are in:
 
 ```text
-silver_gold.cesc_customer_monthly
+backend/app/services/customer_view/service.py
 ```
 
-The relevant columns are:
+The CESC branch searches the serving view, returns `cesc_entity_id` as the identity, and exposes CESC-specific customer data. The frontend presentation is in:
 
 ```text
-cesc_entity_id  text
-bill_ac_month   text
+frontend/src/components/customer-view/CustomerSingleView.tsx
 ```
 
-The monthly table is at CESC entity/month grain. It has a unique B-tree index on:
+It switches behavior based on `brand_code === "power_cesc"`. Customer view is separate from audience compilation; changing segmentation SQL does not automatically change customer search or single-customer rendering.
+
+## 4. Backend integration
+
+### 4.1 Brand registration
+
+The CESC brand is registered in:
 
 ```text
-(cesc_entity_id, bill_ac_month)
+backend/app/core/config.py
+backend/app/api/v1/brands.py
+backend/app/main.py
 ```
 
-The implementation intentionally does not use `bill_ac_month` from `cesc_serving.customer_360_seg_v`. That serving-view value represents the latest available month for an entity and would omit entities whose bill existed in an earlier month.
+Its public code is `power_cesc` and its display name is CESC.
 
-### Compiler behavior
+### 4.2 PostgreSQL compiler
 
-The CESC compiler intercepts only this attribute when the brand is `power_cesc`. It emits a correlated `EXISTS` subquery, preserving one row per entity in the serving view and avoiding monthly-table join fan-out:
+The active compiler is:
+
+```text
+backend/app/services/query_engine/pg_compiler.py
+```
+
+For `power_cesc`, it:
+
+- uses `cesc_serving.customer_360_seg_v` as the profile source;
+- uses `p.cesc_entity_id` for counts and output identity;
+- avoids Spencer's behavioral joins for ordinary CESC attributes;
+- resolves ordinary `cesc.*` attributes against the CESC serving alias `p`;
+- provides special compiler paths for CESC attributes whose data lives at another grain.
+
+The normal compiler methods are:
+
+```text
+PgCompiler.compile()
+PgCompiler.compile_count()
+PgCompiler.compile_preview()
+PgCompiler.compile_summary()
+```
+
+The service factory in `backend/app/services/segmentation/service.py` selects the CESC compiler when the brand code is `power_cesc`.
+
+### 4.3 Segmentation API flow
+
+Request and response models are in:
+
+```text
+backend/app/schemas/api_schemas.py
+```
+
+Segmentation routes are in:
+
+```text
+backend/app/api/v1/segments.py
+```
+
+The estimate flow is:
+
+```text
+Segment Builder rule tree
+  -> POST /api/v1/segments/estimate
+  -> AudienceEstimateRequest
+  -> SegmentationService.estimate_audience_size()
+  -> _make_compiler("power_cesc")
+  -> PgCompiler SQL
+  -> PostgreSQL CESC source
+```
+
+Preview and summary use corresponding service methods and retain their existing response contracts. Live Audience is the ordinary path when `communication_group_view` is false.
+
+## 5. Attribute catalog and frontend
+
+### 5.1 Catalog
+
+The central catalog is:
+
+```text
+backend/app/schemas/profile_attributes.py
+```
+
+A CESC attribute should normally have:
+
+- a `cesc.*` key;
+- a user-facing label;
+- a data type and operator set;
+- `applicable_brands=["power_cesc"]`;
+- the correct CESC source table.
+
+The catalog contains CESC identity, utility billing, lifecycle, consumption, payment, arrear, and channel attributes. Examples include:
+
+```text
+cesc.cesc_entity_id
+cesc.customer_id
+cesc.consumer_no
+cesc.consumer_account_status
+cesc.net_amount
+cesc.first_bill_date
+cesc.tenure_days
+cesc.bill_type
+cesc.bill_ac_month
+cesc.payment_channel
+cesc.payment_method
+```
+
+Brand applicability prevents CESC-only attributes from appearing for unrelated brands.
+
+### 5.2 Segment Builder
+
+The main frontend files are:
+
+```text
+frontend/src/components/segment-builder/SegmentBuilder.tsx
+frontend/src/components/segment-builder/ConditionRow.tsx
+frontend/src/store/segmentStore.ts
+```
+
+The picker reads the catalog and condition rows use catalog metadata to choose the input. String attributes with database-backed values load:
+
+```text
+/api/v1/segments/attributes/{attribute_key}/values?brand_code=power_cesc
+```
+
+The existing string control supports selectable values and multi-value `in_list` conditions. CESC-specific frontend code should be added only when the generic catalog-driven control cannot represent the attribute.
+
+## 6. Bill AC Month integration
+
+### 6.1 Meaning
+
+`cesc.bill_ac_month` is the CESC attribute labelled **Bill AC Month**. It is a string in `YYYYMM` format, for example `202602`.
+
+The rule:
+
+```text
+cesc.bill_ac_month equals 202602
+```
+
+means:
+
+> include every CESC entity with at least one row in `silver_gold.cesc_customer_monthly` whose `bill_ac_month` is `202602`.
+
+The result is counted in entities, not bill rows.
+
+### 6.2 Compiler SQL
+
+The CESC compiler intercepts this attribute only for `power_cesc` and emits:
 
 ```sql
 EXISTS (
@@ -99,24 +333,31 @@ EXISTS (
 )
 ```
 
-Values are validated as six digits and quoted as text. This is important because an incoming numeric value such as `202602` must still compile as the text literal `'202602'`; the shared numeric-looking-value coercion must not be used for this attribute.
+This correlated `EXISTS` preserves one row per serving entity and avoids monthly-table join fan-out.
 
-Supported forms include:
+Values are validated as six digits and quoted as text. An incoming integer `202602` must compile as `'202602'`, not as an integer literal.
 
-- `equals`: entity has a bill in the selected month.
-- `in_list`: entity has a bill in any selected month.
-- `not_equals`: entity has no bill in the selected month.
-- `not_in_list`: entity has no bill in any selected month in the list.
-- `before`, `after`, `greater_than`, `less_than`, `greater_than_or_equal`, and `less_than_or_equal`: compare the fixed-width month text.
-- `between` and `not_between`: compare an inclusive text range.
-- `exists`: entity has at least one monthly bill row.
-- `not_exists`: entity has no monthly bill row.
+### 6.3 Operators
 
-Negative operators use `NOT (EXISTS (...))` around the positive monthly predicate. Condition-level negation wraps the complete EXISTS result.
+| Operator | Entity-level meaning |
+|---|---|
+| `equals` | Has a bill in the selected month. |
+| `in_list` | Has a bill in any selected month. |
+| `not_equals` | Has no bill in the selected month. |
+| `not_in_list` | Has no bill in any selected month in the list. |
+| `before`, `after` | Compare fixed-width `YYYYMM` text. |
+| `greater_than`, `less_than` | Compare fixed-width month text. |
+| `greater_than_or_equal`, `less_than_or_equal` | Inclusive fixed-width month comparison. |
+| `between` | Inclusive month range. |
+| `not_between` | No bill in the inclusive month range. |
+| `exists` | Has at least one monthly row. |
+| `not_exists` | Has no monthly row. |
 
-### Picker values
+Positive rules use `EXISTS`; negative rules use `NOT (EXISTS (...))`. Condition-level negation wraps the complete monthly predicate.
 
-For `power_cesc` and `cesc.bill_ac_month`, the values endpoint uses an explicit CESC target:
+### 6.4 Values endpoint
+
+For `power_cesc` and `cesc.bill_ac_month`, the explicit values query is equivalent to:
 
 ```sql
 SELECT DISTINCT bill_ac_month::TEXT AS val
@@ -125,104 +366,67 @@ WHERE bill_ac_month ~ '^[0-9]{6}$'
 ORDER BY bill_ac_month DESC;
 ```
 
-The catalog has `example_values=[]`, so the UI does not show fabricated example months when the database returns no values. The existing string/dropdown condition UI can load the dynamic values endpoint and use multi-select for `in_list` without a separate CESC-specific input redesign.
+The catalog uses an empty example-value list, so an empty database result does not fall back to misleading hardcoded months. Table and column identifiers are code-defined, not taken from request input.
 
-### Verified current data
+### 6.5 Group View boundary
 
-At the time of the last database verification, the monthly table contained one valid accounting month:
+`cesc.bill_ac_month` is explicitly unsupported in Communication Grouping View. Historical monthly group semantics have not been defined; the attribute must not silently fall back to the latest-month column on the serving view.
+
+### 6.6 Current data snapshot
+
+One verified database snapshot contained:
 
 ```text
-202602: 2,728,391 distinct CESC entities
+Valid monthly value:                    202602
+Distinct monthly entities:             2,728,391
+Distinct serving entities:             2,980,310
+Direct not-equals count:                 251,919
 ```
 
-The picker endpoint returned:
-
-```json
-{"attribute_key":"cesc.bill_ac_month","values":["202602"],"count":1,"source":"database"}
-```
-
-The API estimate for `cesc.bill_ac_month equals '202602'` returned `2,728,391` and generated:
-
-```sql
-SELECT COUNT(DISTINCT p.cesc_entity_id) AS audience_count
-FROM cesc_serving.customer_360_seg_v p
-WHERE (EXISTS (
-    SELECT 1
-    FROM silver_gold.cesc_customer_monthly cm
-    WHERE cm.cesc_entity_id = p.cesc_entity_id
-      AND cm.bill_ac_month = '202602'
-))
-```
-
-The direct database count was also `2,728,391`.
-
-The current serving view had `2,980,310` distinct entities. The direct `not_equals '202602'` count was `251,919`, satisfying:
+The arithmetic is:
 
 ```text
 2,980,310 - 2,728,391 = 251,919
 ```
 
-The dataset currently has only one monthly value, so a three-month historical comparison cannot be made from this database snapshot.
+The values endpoint returned `202602`, and the API estimate for `equals 202602` returned `2,728,391` with the correlated EXISTS query. These values describe that database snapshot; they are not permanent constants.
 
-### Tests
+## 7. Communication Grouping View
 
-Focused tests are in:
+### 7.1 Intended goal
 
-```text
-backend/tests/test_cesc_bill_ac_month.py
-```
+Communication Grouping View answers a different question from Live Audience:
 
-They cover:
+> How many logical communication targets remain after entities belonging to the same eligible CESC communication group are treated as one target?
 
-- catalog metadata and brand applicability;
-- quoted text compilation for both string and integer inputs;
-- correlation on `cesc_entity_id`;
-- negative operators using `NOT (EXISTS (...))`;
-- ordered/between text operators;
-- rejection by the CESC Group View compiler because monthly logic is not implemented there.
-
-The test command used was:
-
-```powershell
-docker compose run --rm backend sh -c "pip install -q pytest pytest-asyncio && pytest tests/test_cesc_bill_ac_month.py -q"
-```
-
-Observed result:
+The intended logical keys are:
 
 ```text
-......                                                                   [100%]
-6 passed in 0.93s
+G:<person_communication_group_id>   grouped entities
+E:<cesc_entity_id>                  ungrouped entity
 ```
 
-## Communication Grouping View
+The prefixes prevent group IDs and entity IDs from colliding.
 
-### Aim and goal
+### 7.2 Existing implementation
 
-The intended goal of Communication Grouping View is to estimate an audience in terms of logical communication entities rather than individual CESC entities. It is intended for use cases where several customer entities should be treated as one communication target, based on an eligible communication-grouping decision table.
-
-The desired grouping logic is:
-
-- entities with an eligible `person_communication_group_id` become one logical group;
-- entities without a group remain individual logical entities;
-- the result should count logical entities, not serving-view rows;
-- group keys should be namespaced as `G:<group_id>` and `E:<cesc_entity_id>` to avoid collisions.
-
-The configured decision source currently referenced by the grouping path is:
+The repository contains `CescGroupViewPgCompiler` in:
 
 ```text
-cesc_silver.cesc_bill_only_grouping_decision_20261027
+backend/app/services/query_engine/pg_compiler.py
 ```
 
-Eligible decisions are:
+Request-time selection is wired through:
 
 ```text
-PERSON_COMMUNICATION_GROUP
-PERSON_COMMUNICATION_GROUP_EMAIL
+backend/app/services/segmentation/service.py
+backend/app/schemas/api_schemas.py
+backend/app/api/v1/segments.py
+frontend/src/store/segmentStore.ts
+frontend/src/components/segment-builder/SegmentBuilder.tsx
 ```
 
-### What exists
-
-The repository contains a separate `CescGroupViewPgCompiler` and request-time service wiring. Its rough count shape uses a member map and a logical key similar to:
+Its rough query shape is:
 
 ```sql
 WITH member_map AS (
@@ -249,72 +453,171 @@ GROUP BY CASE
          END
 ```
 
-The grouping compiler also contains a runtime duplicate-map validation hook. The monthly Bill AC Month attribute is explicitly rejected by this compiler with an unsupported-in-Group-View error; monthly group-level semantics were not implemented as part of the Bill AC Month work.
+The implementation also has a runtime validation hook intended to detect a consumer mapping to multiple groups.
 
-### Rough grouping estimates
+### 7.3 Rough grouping estimates
 
-Earlier CESC grouping checks produced these rough estimates for the then-current data:
+Earlier diagnostic checks reported approximately:
 
 ```text
 Serving entities:                         2,980,310
-Entities belonging to eligible groups:      412,141
-Eligible logical groups:                    338,628
-Estimated no-condition logical audience:  2,906,797
+Entities assigned to eligible groups:       412,141
+Eligible groups:                            338,628
+Rough no-condition grouped count:         2,906,797
+Maximum group size:                              11
+Entities in more than one group:                 0
 ```
 
-The arithmetic behind the rough estimate is:
+The rough calculation is:
 
 ```text
 2,980,310 - 412,141 + 338,628 = 2,906,797
 ```
 
-The earlier checks also reported a maximum group size of 11, no entity in more than one eligible group, and full decision-consumer coverage against the serving view. These are diagnostic estimates, not a product guarantee.
+These are diagnostic estimates for one data snapshot. They must be recalculated whenever the serving view or decision relation changes.
 
-### Important status: not properly implemented
+### 7.4 Current status: incomplete
 
-Communication Grouping View is not properly implemented yet. It exists in the codebase as an experimental path, but it has known integration and correctness limitations:
+Communication Grouping View exists, but it is not properly implemented as a production feature. Known limitations include:
 
-- it is separate from the ordinary Live Audience path and should not be treated as a replacement for Live Audience;
-- the UI/API wiring has historically exposed the ordinary estimated count instead of consistently exposing a separate Group View count;
-- Group View performance is materially slower than the ordinary Live count on the current data volume;
-- aggregate semantics for all attributes, especially monthly attributes, are incomplete or intentionally unsupported;
-- Set Operations, Split, and Rank & Split are not supported in the Group View path;
-- the rough arithmetic above assumes clean one-group-per-entity mapping and should be revalidated whenever the decision table changes;
-- the earlier Group View implementation and helper artifacts remain in the repository and were not deleted.
+- API/frontend wiring has not consistently exposed an independent Group View count instead of the ordinary Live estimate.
+- Grouped queries are expensive at the current data volume.
+- Aggregate semantics are not complete for every CESC attribute.
+- Historical monthly attributes are intentionally unsupported.
+- Set Operations, Split, and Rank & Split are unavailable while Group View is enabled.
+- Correctness depends on the integrity and uniqueness of the decision mapping.
+- Saved-segment and downstream audience semantics need a separate product contract.
 
-Consequently, the grouping numbers in this document are rough estimates for investigation and planning only. They should not be used as an approved production audience count until the API response, frontend rendering, aggregate semantics, and performance behavior are completed and reverified.
+Do not use the rough grouping number as a production delivery count. Do not add an attribute to Group View without defining its group-level semantics and testing the result against seeded data.
 
-## Scope boundaries
+## 8. Customer-view integration
 
-The CESC-specific work is intended to preserve these boundaries:
+The CESC customer-view path is separate from the segment compiler:
 
-- no changes to Spencer's behavior;
-- no changes to Nature's Basket behavior;
-- no changes to Corporate behavior;
-- no identity-data backfill or identity-data rewrite;
-- no database DDL or backfill for Bill AC Month;
-- no change to existing Live Audience SQL for existing attributes as part of the monthly attribute feature;
-- no Group View monthly aggregation logic.
+```text
+backend/app/services/customer_view/service.py
+frontend/src/components/customer-view/CustomerSingleView.tsx
+```
 
-## Relevant files
+The backend CESC branch searches the serving view, returns `cesc_entity_id` as the identity, and maps CESC-specific fields into the customer-view response. The frontend uses the CESC brand code to render CESC-specific sections and labels.
 
-- `backend/app/schemas/profile_attributes.py` — CESC catalog declarations, including `cesc.bill_ac_month`.
-- `backend/app/services/query_engine/pg_compiler.py` — CESC Live compiler identity handling, Bill AC Month EXISTS compilation, and the separate experimental Group View compiler.
-- `backend/app/services/segmentation/service.py` — CESC compiler selection and explicit Bill AC Month values lookup.
-- `backend/app/schemas/api_schemas.py` — request models that carry the existing communication-group-view flag.
-- `backend/app/api/v1/segments.py` — segmentation API routes and request forwarding.
-- `backend/tests/test_cesc_bill_ac_month.py` — focused Bill AC Month compiler tests.
-- `backend/_group_checks.py` — read-only diagnostic SQL for the CESC serving view and grouping decision table.
-- `frontend/src/components/segment-builder/ConditionRow.tsx` — existing dynamic attribute value loading and string dropdown behavior.
-- `frontend/src/store/segmentStore.ts` — existing audience-estimate state handling.
-- `frontend/src/components/segment-builder/SegmentBuilder.tsx` — existing segment-builder UI wiring.
+## 9. Testing and diagnostics
 
-## Operational note
+Focused CESC tests are in:
 
-After changing backend source files in the Docker development setup, restart the backend service to reload the application:
+```text
+backend/tests/test_cesc_pg_compiler.py
+backend/tests/test_cesc_bill_ac_month.py
+backend/tests/test_cesc_group_view_compiler.py
+```
+
+The Bill AC Month test suite covers catalog metadata, brand applicability, EXISTS correlation, text quoting for string and integer inputs, negative operators, ordered/between operators, and Group View rejection.
+
+The focused test command is:
+
+```powershell
+docker compose run --rm backend sh -c "pip install -q pytest pytest-asyncio && pytest tests/test_cesc_bill_ac_month.py -q"
+```
+
+One verified run produced:
+
+```text
+......                                                                   [100%]
+6 passed in 0.93s
+```
+
+The broader read-only grouping diagnostic script is:
+
+```text
+backend/_group_checks.py
+```
+
+It checks serving identity shape, grouping categories, decision-to-view coverage, group sizes, tenure and consumption ranges, and burden-ratio relationships. It is a diagnostic script, not a migration and not an application startup dependency.
+
+Useful direct checks include:
+
+```sql
+SELECT COUNT(*) AS rows_total,
+       COUNT(DISTINCT cesc_entity_id) AS distinct_entities
+FROM cesc_serving.customer_360_seg_v;
+
+SELECT bill_ac_month,
+       COUNT(DISTINCT cesc_entity_id) AS entities
+FROM silver_gold.cesc_customer_monthly
+GROUP BY bill_ac_month
+ORDER BY bill_ac_month;
+
+SELECT grouping_decision,
+       COUNT(*) AS rows_n,
+       COUNT(DISTINCT consumer_no) AS distinct_consumers,
+       COUNT(DISTINCT person_communication_group_id) AS distinct_groups
+FROM cesc_silver.cesc_bill_only_grouping_decision_20261027
+GROUP BY grouping_decision
+ORDER BY grouping_decision;
+```
+
+## 10. Development and troubleshooting
+
+After changing mounted backend source files in the Docker development setup:
 
 ```powershell
 docker compose restart backend
 ```
 
-No database restart, DDL, migration, or backfill is required for Bill AC Month.
+Restart the frontend separately when needed:
+
+```powershell
+docker compose restart frontend
+```
+
+When inspecting generated SQL for a CESC rule, confirm:
+
+1. The source is `cesc_serving.customer_360_seg_v`.
+2. Counts use `COUNT(DISTINCT p.cesc_entity_id)`.
+3. Preview rows use the `customer_id` alias.
+4. Monthly rules use `EXISTS` against `silver_gold.cesc_customer_monthly`.
+5. A Live request is not accidentally using Group View.
+
+Common mistakes:
+
+| Mistake | Consequence | Correct approach |
+|---|---|---|
+| Using `unified_id` for CESC audience identity | Missing or incorrect matches | Use `cesc_entity_id`. |
+| Joining monthly rows directly | Duplicate rows and inflated counts | Use correlated `EXISTS`. |
+| Filtering the latest-month serving column | Historical billers are missed | Use `cesc_customer_monthly`. |
+| Coercing `202602` to an integer | Text/integer comparison failure | Validate and quote month values. |
+| Adding CESC keys to shared maps without a brand gate | Other brands can resolve to CESC data | Gate on `power_cesc`. |
+| Treating Group View as Live Audience | Wrong logical-entity counts | Keep the paths separate. |
+| Adding a Group View attribute without aggregate semantics | Silent incorrect grouping | Reject it until semantics exist. |
+
+## 11. Change boundaries and source map
+
+Preserve these invariants:
+
+1. CESC behavior is selected only for `power_cesc`.
+2. CESC audience identity is `cesc_entity_id`.
+3. Count and preview aliases remain `audience_count` and `customer_id`.
+4. Historical monthly filters remain entity-level EXISTS predicates.
+5. CESC changes do not alter Spencer's, Nature's Basket, or Corporate SQL.
+6. Bill AC Month requires no DDL, backfill, or identity-data rewrite.
+7. Group View remains separate until its API, UI, performance, and semantics are completed.
+
+Relevant source files:
+
+| Area | File |
+|---|---|
+| Brand enum/configuration | `backend/app/core/config.py` |
+| Brand API listing | `backend/app/api/v1/brands.py` |
+| Attribute catalog | `backend/app/schemas/profile_attributes.py` |
+| Request/response schemas | `backend/app/schemas/api_schemas.py` |
+| PostgreSQL compiler | `backend/app/services/query_engine/pg_compiler.py` |
+| Segmentation service | `backend/app/services/segmentation/service.py` |
+| Segmentation routes | `backend/app/api/v1/segments.py` |
+| Customer search/single view | `backend/app/services/customer_view/service.py` |
+| Segment Builder | `frontend/src/components/segment-builder/SegmentBuilder.tsx` |
+| Condition rendering/values | `frontend/src/components/segment-builder/ConditionRow.tsx` |
+| Audience state | `frontend/src/store/segmentStore.ts` |
+| CESC compiler tests | `backend/tests/test_cesc_pg_compiler.py` |
+| Bill AC Month tests | `backend/tests/test_cesc_bill_ac_month.py` |
+| Group View tests | `backend/tests/test_cesc_group_view_compiler.py` |
+| Grouping diagnostics | `backend/_group_checks.py` |
