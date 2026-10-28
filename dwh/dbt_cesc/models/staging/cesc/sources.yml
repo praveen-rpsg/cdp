@@ -1,0 +1,14 @@
+﻿version: 2
+
+sources:
+  - name: bronze
+    schema: bronze
+    tables:
+      - name: cesc_cih_master
+        description: "CESC CIH master records from Resulticks"
+
+      - name: cesc_lifetime_attributes
+        description: "CESC lifetime customer attributes from Resulticks"
+
+      - name: cesc_bill_monthly
+        description: "CESC monthly bill data"

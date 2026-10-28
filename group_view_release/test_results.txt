@@ -1,0 +1,13 @@
+Pytest results (Docker backend)
+===============================
+
+Command:
+  cd "C:\Users\Admin\Desktop\projects\cdp_clean\cdp_clean"
+  docker compose run --rm backend sh -lc "python -m pytest tests/test_group_view.py -q"
+
+If pytest is missing:
+  docker compose run --rm backend sh -lc "pip install pytest && python -m pytest tests/test_group_view.py -q"
+
+Actual output:
+  ...                                                                      [100%]
+  3 passed in 9.30s

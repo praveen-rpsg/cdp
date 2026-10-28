@@ -1,0 +1,40 @@
+{
+    "path_count": 133,
+    "parsed_path_count": 1,
+    "static_analysis_path_count": 0,
+    "static_analysis_parsed_path_count": 0,
+    "is_partial_parse_enabled": true,
+    "is_static_analysis_enabled": true,
+    "read_files_elapsed": 0.33056450900039636,
+    "load_macros_elapsed": 0.0007525559994974174,
+    "parse_project_elapsed": 0.36907416400208604,
+    "patch_sources_elapsed": 3.4026998037006706e-05,
+    "process_manifest_elapsed": 0.001404779999575112,
+    "load_all_elapsed": 1.2775943369997549,
+    "projects": [
+        {
+            "project_name": "cesc_cdp",
+            "elapsed": 0.3689317260068492,
+            "parsers": [
+                {
+                    "parser": "test",
+                    "elapsed": 0.3689166080002906,
+                    "parsed_path_count": 1
+                }
+            ],
+            "parsed_path_count": 1
+        },
+        {
+            "project_name": "dbt_postgres",
+            "elapsed": 0,
+            "parsers": [],
+            "parsed_path_count": 0
+        },
+        {
+            "project_name": "dbt",
+            "elapsed": 0,
+            "parsers": [],
+            "parsed_path_count": 0
+        }
+    ]
+}

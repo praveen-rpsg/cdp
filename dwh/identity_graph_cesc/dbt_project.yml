@@ -1,0 +1,43 @@
+name: 'cesc_identity'
+version: '1.0.0'
+config-version: 2
+
+profile: 'cesc_identity'
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  cesc_identity:
+    +schema: ""
+    +materialized: table
+    candidates:
+      +materialized: table
+    evidence:
+      +materialized: table
+    scoring:
+      +materialized: table
+    resolution:
+      +materialized: table
+    graph:
+      +materialized: table
+    audit:
+      +materialized: table
+    silver_gold:
+      +schema: cesc_silver_gold
+      +materialized: table
+
+vars:
+  score_version: 'v1.0'
+  threshold_connect: 70.0
+  threshold_manual_review: 70.0
+  bill_period: '202602'
+  run_id: 'CESC_IR_202602_v1.0'

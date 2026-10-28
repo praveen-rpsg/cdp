@@ -77,7 +77,15 @@ class BehavioralBlock(BaseModel):
     rfm_recency_score: int | None = None
     rfm_frequency_score: int | None = None
     rfm_monetary_score: int | None = None
-
+    # ── CESC-specific behavioral / utility attributes ──
+    monthly_consumption: fl    # ── CESC-specific behavioral / utility attributes ──
+    monthly_consumption: float | None = None
+    avg_consumption_3m: float | None = None
+    avg_consumption_6m: float | None = None
+    annual_billed_value: float | None = None
+    consumption_trend: str | None = None
+    payment_behaviour_profile: str | None = None
+    arrear_status: str | None = None
 
 class ReachabilityBlock(BaseModel):
     # Stored as text 'Yes'/'No' in unified_profiles, not booleans.
@@ -86,6 +94,11 @@ class ReachabilityBlock(BaseModel):
     accepts_sms_marketing: str | None = None
     whatsapp: str | None = None
     gw_customer_flag: str | None = None
+    # ── CESC-specific service / account attributes ──
+    consumer_account_status: str | None = None
+    digital_engagement_status: str | None = None
+    complaint_status: str | None = None
+    arrear_status: str | None = None
 
 
 class SegmentScore(BaseModel):

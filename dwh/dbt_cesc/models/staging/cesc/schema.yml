@@ -1,0 +1,59 @@
+version: 2
+
+models:
+
+  - name: stg_cesc_cih
+    description: "Normalized one-row-per-source-record CESC CIH staging view."
+    columns:
+      - name: cih_source_row_key
+        tests:
+          - not_null
+          - unique
+
+      - name: email_valid_flag
+        tests:
+          - accepted_values:
+              values: [true, false]
+              quote: false
+
+      - name: is_mobile_normalized
+        tests:
+          - accepted_values:
+              values: [true, false]
+              quote: false
+
+  - name: stg_cesc_bill
+    description: "Normalized one-row-per-source-record CESC monthly bill staging view."
+
+  - name: stg_cesc_lifetime
+    description: "Normalized CESC lifetime attribute staging view."
+
+  - name: stg_cesc_cih_consumer_numbers
+    description: "Independently normalized historical consumer-number observations."
+    columns:
+      - name: cih_source_row_key
+        tests:
+          - not_null
+
+      - name: consumer_number_ordinal
+        tests:
+          - not_null
+
+      - name: consumer_no
+        tests:
+          - not_null
+
+  - name: stg_cesc_cih_bill_months
+    description: "Independently normalized historical billing-month observations."
+    columns:
+      - name: cih_source_row_key
+        tests:
+          - not_null
+
+      - name: bill_month_ordinal
+        tests:
+          - not_null
+
+      - name: bill_ac_month
+        tests:
+          - not_null

@@ -1,0 +1,18 @@
+PowerShell / Docker Rebuild Instructions
+=======================================
+
+Run these commands in PowerShell from the repo root:
+
+  cd "C:\Users\Admin\Desktop\projects\cdp_clean\cdp_clean"
+  docker compose build
+  docker compose up -d
+  docker compose run --rm backend sh -lc "python -m pytest tests/test_group_view.py -q"
+
+If the backend container is missing pytest:
+
+  docker compose run --rm backend sh -lc "pip install pytest && python -m pytest tests/test_group_view.py -q"
+
+Alternative one-shot validation command used during verification:
+
+  cd "C:\Users\Admin\Desktop\projects\cdp_clean\cdp_clean"
+  docker compose run --rm backend sh -lc "python -m pytest tests/test_group_view.py -q"; if ($LASTEXITCODE -ne 0) { docker compose run --rm backend sh -lc "pip install pytest && python -m pytest tests/test_group_view.py -q" }

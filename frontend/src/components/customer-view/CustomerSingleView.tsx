@@ -16,6 +16,7 @@ interface SegmentScore {
   raw_score: number | null;
   normalized_score: number | null;
 }
+
 interface SingleView {
   found: boolean;
   brand_code: string;
@@ -29,7 +30,12 @@ interface SingleView {
   } | null;
   spend_trend: { month: string; spend: number }[];
   top_articles: { article: string; segment: string | null; spend: number }[];
-  location_propensity: { segment: string; spend: number; share_pct: number; normalized_score: number }[];
+  location_propensity: {
+    segment: string;
+    spend: number;
+    share_pct: number;
+    normalized_score: number;
+  }[];
 }
 
 const SEGMENT_COLORS: Record<string, string> = {
@@ -43,25 +49,39 @@ const SEGMENT_COLORS: Record<string, string> = {
 
 const fmtINR = (v: number | null | undefined) =>
   v == null ? "—" : "₹" + Math.round(v).toLocaleString("en-IN");
+
 const fmtNum = (v: number | null | undefined) =>
   v == null ? "—" : Math.round(v).toLocaleString("en-IN");
 
 /* ── Small UI helpers ──────────────────────────────────────── */
-const Card: React.FC<{ title: string; icon?: string; children: React.ReactNode; className?: string }> = ({
-  title, icon, children, className,
-}) => (
-  <div className={`bg-white rounded-xl border border-gray-200 shadow-sm p-4 ${className || ""}`}>
+const Card: React.FC<{
+  title: string;
+  icon?: string;
+  children: React.ReactNode;
+  className?: string;
+}> = ({ title, icon, children, className }) => (
+  <div
+    className={`bg-white rounded-xl border border-gray-200 shadow-sm p-4 ${
+      className || ""
+    }`}
+  >
     <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
-      {icon && <span>{icon}</span>}{title}
+      {icon && <span>{icon}</span>}
+      {title}
     </h3>
     {children}
   </div>
 );
 
-const Field: React.FC<{ label: string; value: React.ReactNode }> = ({ label, value }) => (
+const Field: React.FC<{ label: string; value: React.ReactNode }> = ({
+  label,
+  value,
+}) => (
   <div className="flex justify-between gap-3 py-1 text-sm">
     <span className="text-gray-500">{label}</span>
-    <span className="font-medium text-gray-800 text-right truncate">{value ?? "—"}</span>
+    <span className="font-medium text-gray-800 text-right truncate">
+      {value ?? "—"}
+    </span>
   </div>
 );
 
@@ -73,11 +93,25 @@ const ChannelSplitTable: React.FC<{ b: Record<string, any> }> = ({ b }) => {
   const onlineBills = b.online_bills ?? null;
   const storeBills = b.store_bills ?? null;
   const totalBills = b.total_bills ?? null;
-  const share = (v: number) => (total > 0 ? ((v / total) * 100).toFixed(1) + "%" : "—");
+
+  const share = (v: number) =>
+    total > 0 ? ((v / total) * 100).toFixed(1) + "%" : "—";
 
   const rows = [
-    { label: "Online", bills: onlineBills, spend: online, share: share(online), accent: "#2563eb" },
-    { label: "Offline (Store)", bills: storeBills, spend: store, share: share(store), accent: "#ea580c" },
+    {
+      label: "Online",
+      bills: onlineBills,
+      spend: online,
+      share: share(online),
+      accent: "#2563eb",
+    },
+    {
+      label: "Offline (Store)",
+      bills: storeBills,
+      spend: store,
+      share: share(store),
+      accent: "#ea580c",
+    },
   ];
 
   return (
@@ -85,6 +119,7 @@ const ChannelSplitTable: React.FC<{ b: Record<string, any> }> = ({ b }) => {
       <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 pt-4 pb-2 flex items-center gap-2">
         🛒 Omnichannel Profile
       </h3>
+
       <table className="w-full text-sm">
         <thead>
           <tr className="bg-slate-800 text-white text-xs uppercase tracking-wider">
@@ -94,25 +129,42 @@ const ChannelSplitTable: React.FC<{ b: Record<string, any> }> = ({ b }) => {
             <th className="py-2.5 px-4 text-right font-semibold">Share</th>
           </tr>
         </thead>
+
         <tbody>
           {rows.map((r) => (
             <tr key={r.label} className="border-b border-gray-100">
               <td className="py-2.5 px-4 font-medium text-gray-800">
                 <span className="inline-flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: r.accent }} />
+                  <span
+                    className="w-2 h-2 rounded-full"
+                    style={{ backgroundColor: r.accent }}
+                  />
                   {r.label}
                 </span>
               </td>
-              <td className="py-2.5 px-4 text-right tabular-nums text-gray-600">{fmtNum(r.bills)}</td>
-              <td className="py-2.5 px-4 text-right tabular-nums text-gray-700">{fmtINR(r.spend)}</td>
-              <td className="py-2.5 px-4 text-right tabular-nums font-semibold text-gray-800">{r.share}</td>
+              <td className="py-2.5 px-4 text-right tabular-nums text-gray-600">
+                {fmtNum(r.bills)}
+              </td>
+              <td className="py-2.5 px-4 text-right tabular-nums text-gray-700">
+                {fmtINR(r.spend)}
+              </td>
+              <td className="py-2.5 px-4 text-right tabular-nums font-semibold text-gray-800">
+                {r.share}
+              </td>
             </tr>
           ))}
+
           <tr className="bg-gray-50">
             <td className="py-2.5 px-4 font-bold text-gray-900">Combined</td>
-            <td className="py-2.5 px-4 text-right tabular-nums font-bold text-gray-900">{fmtNum(totalBills)}</td>
-            <td className="py-2.5 px-4 text-right tabular-nums font-bold text-gray-900">{fmtINR(total)}</td>
-            <td className="py-2.5 px-4 text-right tabular-nums font-bold text-gray-900">{total > 0 ? "100%" : "—"}</td>
+            <td className="py-2.5 px-4 text-right tabular-nums font-bold text-gray-900">
+              {fmtNum(totalBills)}
+            </td>
+            <td className="py-2.5 px-4 text-right tabular-nums font-bold text-gray-900">
+              {fmtINR(total)}
+            </td>
+            <td className="py-2.5 px-4 text-right tabular-nums font-bold text-gray-900">
+              {total > 0 ? "100%" : "—"}
+            </td>
           </tr>
         </tbody>
       </table>
@@ -121,22 +173,32 @@ const ChannelSplitTable: React.FC<{ b: Record<string, any> }> = ({ b }) => {
 };
 
 /* ── Behavioral Insights (promo / rhythm / RFM / basket) ───── */
-const Stat: React.FC<{ label: string; value: React.ReactNode; sub?: string }> = ({ label, value, sub }) => (
+const Stat: React.FC<{
+  label: string;
+  value: React.ReactNode;
+  sub?: string;
+}> = ({ label, value, sub }) => (
   <div className="bg-gray-50 rounded-lg p-3 border border-gray-100">
-    <div className="text-[10px] text-gray-400 uppercase tracking-wider truncate">{label}</div>
+    <div className="text-[10px] text-gray-400 uppercase tracking-wider truncate">
+      {label}
+    </div>
     <div className="text-base font-bold text-gray-800 mt-0.5">{value}</div>
     {sub && <div className="text-[10px] text-gray-400 mt-0.5">{sub}</div>}
   </div>
 );
 
 const Badge: React.FC<{ text: string; color: string }> = ({ text, color }) => (
-  <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold text-white" style={{ backgroundColor: color }}>
+  <span
+    className="px-2 py-0.5 rounded-full text-[11px] font-semibold text-white"
+    style={{ backgroundColor: color }}
+  >
     {text}
   </span>
 );
 
 const pct = (n: number | null | undefined, d: number | null | undefined) =>
   n != null && d ? (n / d) * 100 : null;
+
 const showPct = (v: number | null) => (v == null ? "—" : v.toFixed(0) + "%");
 
 const BehavioralInsights: React.FC<{ b: Record<string, any> }> = ({ b }) => {
@@ -144,36 +206,86 @@ const BehavioralInsights: React.FC<{ b: Record<string, any> }> = ({ b }) => {
   const promoShare = pct(b.promo_bill_count, bills);
   const returnShare = pct(b.return_bill_count, bills);
   const weekendShare = pct(b.weekend_bill_count, bills);
-  const discountShare = pct(b.total_discount, (b.total_spend ?? 0) + (b.total_discount ?? 0));
-  const avgGap = b.tenure_days && b.total_visits ? b.tenure_days / b.total_visits : null;
+  const discountShare = pct(
+    b.total_discount,
+    (b.total_spend ?? 0) + (b.total_discount ?? 0)
+  );
+  const avgGap =
+    b.tenure_days && b.total_visits ? b.tenure_days / b.total_visits : null;
 
   const badges: { text: string; color: string }[] = [];
-  if (promoShare != null && promoShare >= 30) badges.push({ text: "Deal Seeker", color: "#ea580c" });
-  else if (promoShare != null && promoShare < 10) badges.push({ text: "Full-Price Shopper", color: "#16a34a" });
-  if (weekendShare != null && weekendShare >= 55) badges.push({ text: "Weekend Shopper", color: "#7c3aed" });
-  if (returnShare != null && returnShare >= 15) badges.push({ text: "Frequent Returner", color: "#dc2626" });
-  if ((b.distinct_store_count ?? 0) <= 1 && bills > 1) badges.push({ text: "Single-Store Loyal", color: "#2563eb" });
+
+  if (promoShare != null && promoShare >= 30) {
+    badges.push({ text: "Deal Seeker", color: "#ea580c" });
+  } else if (promoShare != null && promoShare < 10) {
+    badges.push({ text: "Full-Price Shopper", color: "#16a34a" });
+  }
+
+  if (weekendShare != null && weekendShare >= 55) {
+    badges.push({ text: "Weekend Shopper", color: "#7c3aed" });
+  }
+
+  if (returnShare != null && returnShare >= 15) {
+    badges.push({ text: "Frequent Returner", color: "#dc2626" });
+  }
+
+  if ((b.distinct_store_count ?? 0) <= 1 && bills > 1) {
+    badges.push({ text: "Single-Store Loyal", color: "#2563eb" });
+  }
 
   const rfm = [b.rfm_recency_score, b.rfm_frequency_score, b.rfm_monetary_score];
-  const rfmStr = rfm.every((x) => x == null) ? "—" : `${rfm[0] ?? "–"} / ${rfm[1] ?? "–"} / ${rfm[2] ?? "–"}`;
+
+  const rfmStr = rfm.every((x) => x == null)
+    ? "—"
+    : `${rfm[0] ?? "–"} / ${rfm[1] ?? "–"} / ${rfm[2] ?? "–"}`;
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
       <div className="flex items-center gap-2 mb-3 flex-wrap">
-        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">🧭 Behavioral Insights</h3>
-        {badges.map((bd) => <Badge key={bd.text} {...bd} />)}
+        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+          🧭 Behavioral Insights
+        </h3>
+        {badges.map((bd) => (
+          <Badge key={bd.text} {...bd} />
+        ))}
       </div>
+
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
         <Stat label="RFM (R/F/M)" value={rfmStr} />
-        <Stat label="Promo Bills" value={showPct(promoShare)} sub={`${fmtNum(b.promo_bill_count)} of ${fmtNum(bills)}`} />
-        <Stat label="Discount Share" value={showPct(discountShare)} sub={fmtINR(b.total_discount)} />
-        <Stat label="Return Rate" value={showPct(returnShare)} sub={`${fmtNum(b.return_bill_count)} returns`} />
+        <Stat
+          label="Promo Bills"
+          value={showPct(promoShare)}
+          sub={`${fmtNum(b.promo_bill_count)} of ${fmtNum(bills)}`}
+        />
+        <Stat
+          label="Discount Share"
+          value={showPct(discountShare)}
+          sub={fmtINR(b.total_discount)}
+        />
+        <Stat
+          label="Return Rate"
+          value={showPct(returnShare)}
+          sub={`${fmtNum(b.return_bill_count)} returns`}
+        />
         <Stat label="Weekend Bills" value={showPct(weekendShare)} />
         <Stat label="Active Months" value={fmtNum(b.distinct_months)} />
-        <Stat label="Avg Days Between Visits" value={avgGap == null ? "—" : Math.round(avgGap)} />
+        <Stat
+          label="Avg Days Between Visits"
+          value={avgGap == null ? "—" : Math.round(avgGap)}
+        />
         <Stat label="Stores Visited" value={fmtNum(b.distinct_store_count)} />
-        <Stat label="Distinct Articles" value={fmtNum(b.distinct_article_count)} />
-        <Stat label="Avg Items / Bill" value={b.avg_items_per_bill == null ? "—" : Number(b.avg_items_per_bill).toFixed(1)} />
+        <Stat
+          label="Distinct Articles"
+          value={fmtNum(b.distinct_article_count)}
+        />
+        <Stat
+          label="Avg Items / Bill"
+          value={
+            b.avg_items_per_bill == null
+              ? "—"
+              : Number(b.avg_items_per_bill).toFixed(1)
+          }
+        />
       </div>
     </div>
   );
@@ -181,8 +293,15 @@ const BehavioralInsights: React.FC<{ b: Record<string, any> }> = ({ b }) => {
 
 /* ══════════════════════════════════════════════════════════════ */
 export const CustomerSingleView: React.FC = () => {
-  const { brands, selectedBrandCode, setSelectedBrand, pendingSingleView, setPendingSingleView, setPendingCorporateView } =
-    useSegmentStore();
+  const {
+    brands,
+    selectedBrandCode,
+    setSelectedBrand,
+    pendingSingleView,
+    setPendingSingleView,
+    setPendingCorporateView,
+  } = useSegmentStore();
+
   const [searchBy, setSearchBy] = useState<"mobile" | "id">("mobile");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
@@ -196,9 +315,14 @@ export const CustomerSingleView: React.FC = () => {
     if (pendingSingleView?.mobile) {
       const { mobile: m, brand: br } = pendingSingleView;
       const targetBrand = br || brand;
+
       setSearchBy("mobile");
       setQuery(m);
-      if (br) setSelectedBrand(br);
+
+      if (br) {
+        setSelectedBrand(br);
+      }
+
       setPendingSingleView(null);
       doSearch(m, "mobile", targetBrand);
     }
@@ -207,18 +331,26 @@ export const CustomerSingleView: React.FC = () => {
 
   const doSearch = async (q: string, by: "mobile" | "id", br: string) => {
     if (!q.trim()) return;
+
     setLoading(true);
     setError(null);
     setData(null);
+
     const param = by === "mobile" ? "mobile" : "customer_id";
+
     try {
       const res = await fetch(
-        `/api/v1/customers/single-view?brand_code=${encodeURIComponent(br)}&${param}=${encodeURIComponent(q.trim())}`
+        `/api/v1/customers/single-view?brand_code=${encodeURIComponent(
+          br
+        )}&${param}=${encodeURIComponent(q.trim())}`
       );
       const json = await res.json();
+
       if (!json.found) {
         setError(
-          `No customer found for this ${by === "mobile" ? "mobile number" : "unified ID"} in ${br}`
+          `No customer found for this ${
+            by === "mobile" ? "mobile number" : "unified ID"
+          } in ${br}`
         );
       } else {
         setData(json);
@@ -233,13 +365,25 @@ export const CustomerSingleView: React.FC = () => {
   const id = data?.identity || {};
   const b = data?.behavioral || {};
   const r = data?.reachability || {};
+  const isCesc = data?.brand_code === "power_cesc";
   const prop = data?.propensity;
 
-  const maxNorm = Math.max(0.0001, ...(prop?.segments.map((s) => s.normalized_score || 0) || [0]));
+  const maxNorm = Math.max(
+    0.0001,
+    ...(prop?.segments.map((s) => s.normalized_score || 0) || [0])
+  );
 
   const openInCorporate = (rpsgId: string) => {
-    setPendingCorporateView({ mobile: id.mobile || "", r1_id: rpsgId });
-    window.dispatchEvent(new CustomEvent("csv:navigate", { detail: { target: "corporate_view" } }));
+    setPendingCorporateView({
+      mobile: id.mobile || "",
+      r1_id: rpsgId,
+    });
+
+    window.dispatchEvent(
+      new CustomEvent("csv:navigate", {
+        detail: { target: "corporate_view" },
+      })
+    );
   };
 
   return (
@@ -247,45 +391,74 @@ export const CustomerSingleView: React.FC = () => {
       {/* Search bar */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex flex-col sm:flex-row gap-3 items-stretch sm:items-end">
         <div className="w-full sm:w-40">
-          <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1.5">Search By</label>
+          <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1.5">
+            Search By
+          </label>
           <select
             value={searchBy}
-            onChange={(e) => { setSearchBy(e.target.value as "mobile" | "id"); setQuery(""); }}
+            onChange={(e) => {
+              setSearchBy(e.target.value as "mobile" | "id");
+              setQuery("");
+            }}
             className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-500 outline-none cursor-pointer"
           >
             <option value="mobile">Mobile Number</option>
             <option value="id">Unified ID</option>
           </select>
         </div>
+
         <div className="flex-1">
           <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1.5">
-            Search Customer <span className="font-normal normal-case text-gray-400">(type 3+ digits / chars)</span>
+            Search Customer{" "}
+            <span className="font-normal normal-case text-gray-400">
+              (type 3+ digits / chars)
+            </span>
           </label>
           <CustomerAutocomplete
             brandCode={brand}
             value={query}
             onChange={setQuery}
             onPick={(p) => {
-              if (p.mobile) { setSearchBy("mobile"); setQuery(p.mobile); doSearch(p.mobile, "mobile", brand); }
-              else { setSearchBy("id"); setQuery(p.id); doSearch(p.id, "id", brand); }
+              if (p.mobile) {
+                setSearchBy("mobile");
+                setQuery(p.mobile);
+                doSearch(p.mobile, "mobile", brand);
+              } else {
+                setSearchBy("id");
+                setQuery(p.id);
+                doSearch(p.id, "id", brand);
+              }
             }}
             onEnter={() => doSearch(query, searchBy, brand)}
             placeholder="Start typing a mobile number or ID…"
             className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none font-mono"
           />
         </div>
+
         <div className="w-full sm:w-48">
-          <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1.5">Brand</label>
+          <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1.5">
+            Brand
+          </label>
           <select
             value={brand}
             onChange={(e) => setSelectedBrand(e.target.value)}
             className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-500 outline-none cursor-pointer"
           >
-            {brands.filter((x) => x.code === "spencers" || x.code === "natures_basket").map((x) => (
-              <option key={x.code} value={x.code}>{x.name}</option>
-            ))}
+            {brands
+              .filter(
+                (x) =>
+                  x.code === "spencers" ||
+                  x.code === "natures_basket" ||
+                  x.code === "power_cesc"
+              )
+              .map((x) => (
+                <option key={x.code} value={x.code}>
+                  {x.name}
+                </option>
+              ))}
           </select>
         </div>
+
         <button
           onClick={() => doSearch(query, searchBy, brand)}
           disabled={loading || !query.trim()}
@@ -296,83 +469,145 @@ export const CustomerSingleView: React.FC = () => {
       </div>
 
       {error && (
-        <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-xl px-4 py-3 text-sm">{error}</div>
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-xl px-4 py-3 text-sm">
+          {error}
+        </div>
       )}
 
       {!data && !error && !loading && (
         <div className="text-center text-gray-400 py-20 text-sm">
-          Search by mobile number or unified ID to view a customer's 360° profile.
+          Search by mobile number or unified ID to view a customer's 360°
+          profile.
         </div>
       )}
 
       {data && (
         <>
           {/* Row 1: Identity / Behavioral / Reachability */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-            <Card title="Key Attributes" icon="👤">
-              <Field label="Name" value={id.name} />
-              <Field label="Unified ID" value={<span className="font-mono text-xs">{id.unified_id}</span>} />
-              <Field
-                label="RPSG ID"
-                value={
-                  id.rpsg_id ? (
-                    <button
-                      onClick={() => openInCorporate(id.rpsg_id)}
-                      className="font-mono text-xs text-purple-700 hover:underline inline-flex items-center gap-1"
-                      title="Open this customer in Corporate Single View"
-                    >
-                      {id.rpsg_id} <span className="text-[10px]">↗</span>
-                    </button>
-                  ) : (
-                    <span className="text-gray-400">—</span>
-                  )
-                }
-              />
-              <Field label="Mobile" value={id.mobile} />
-              <Field label="Email" value={id.email} />
-              <Field label="DOB" value={id.dob} />
-              <Field label="Age" value={id.age} />
-              <Field label="City" value={id.city} />
-              <Field label="Pincode" value={id.pincode} />
-              <Field label="Customer Group" value={id.customer_group} />
-              <Field label="Source" value={id.primary_source} />
-            </Card>
+          {isCesc ? (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+              <Card title="Key Attributes" icon="👤">
+                <Field label="Name" value={id.name} />
+                <Field
+                  label="Unified ID"
+                  value={<span className="font-mono text-xs">{id.unified_id}</span>}
+                />
+                <Field label="Mobile" value={id.mobile} />
+                <Field label="Email" value={id.email} />
+                <Field label="Source" value={id.primary_source} />
+                <Field label="Account Status" value={id.status} />
+              </Card>
 
-            <Card title="Behavioral Attributes" icon="🎯">
-              <Field label="First Bill" value={b.first_bill_date} />
-              <Field label="Last Bill" value={b.last_bill_date} />
-              <Field label="Recency (days)" value={fmtNum(b.recency_days)} />
-              <Field label="Total Bills" value={fmtNum(b.total_bills)} />
-              <Field label="Total Visits" value={fmtNum(b.total_visits)} />
-              <Field label="Total Spend" value={fmtINR(b.total_spend)} />
-              <Field label="Spend / Bill" value={fmtINR(b.spend_per_bill)} />
-              <Field label="Spend Decile" value={b.spend_decile} />
-              <Field label="Lifecycle" value={b.lifecycle_stage} />
-              <Field
-                label="Fav Store"
-                value={
-                  b.fav_store_name
-                    ? `${b.fav_store_name}${id.registered_store ? ` (${id.registered_store})` : ""}`
-                    : id.registered_store || "—"
-                }
-              />
-              <Field label="Fav Day" value={b.fav_day} />
-            </Card>
+              <Card title="Behavioral Attributes" icon="🎯">
+                <Field
+                  label="Monthly Consumption"
+                  value={fmtNum(b.monthly_consumption)}
+                />
+                <Field
+                  label="3M Avg Consumption"
+                  value={fmtNum(b.avg_consumption_3m)}
+                />
+                <Field
+                  label="6M Avg Consumption"
+                  value={fmtNum(b.avg_consumption_6m)}
+                />
+                <Field label="Consumption Trend" value={b.consumption_trend} />
+                <Field label="Lifetime Spend" value={fmtINR(b.total_spend)} />
+                <Field
+                  label="Annual Billed Value"
+                  value={fmtINR(b.annual_billed_value)}
+                />
+                <Field
+                  label="Payment Behaviour Profile"
+                  value={b.payment_behaviour_profile}
+                />
+                <Field label="Arrear Status" value={b.arrear_status} />
+              </Card>
 
-            <Card title="Reachability" icon="📡">
-              <Field label="DND" value={r.dnd} />
-              <Field label="Email Opt-In" value={r.accepts_email_marketing} />
-              <Field label="SMS Opt-In" value={r.accepts_sms_marketing} />
-              <Field label="WhatsApp" value={r.whatsapp} />
-              <Field label="Channel Presence" value={b.channel_presence} />
-            </Card>
-          </div>
+              <Card title="Reachability" icon="📡">
+                <Field
+                  label="Consumer Account Status"
+                  value={r.consumer_account_status}
+                />
+                <Field
+                  label="Digital Engagement"
+                  value={r.digital_engagement_status}
+                />
+                <Field label="Complaint Status" value={r.complaint_status} />
+              </Card>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+              <Card title="Key Attributes" icon="👤">
+                <Field label="Name" value={id.name} />
+                <Field
+                  label="Unified ID"
+                  value={<span className="font-mono text-xs">{id.unified_id}</span>}
+                />
+                <Field
+                  label="RPSG ID"
+                  value={
+                    id.rpsg_id ? (
+                      <button
+                        onClick={() => openInCorporate(id.rpsg_id)}
+                        className="font-mono text-xs text-purple-700 hover:underline inline-flex items-center gap-1"
+                        title="Open this customer in Corporate Single View"
+                      >
+                        {id.rpsg_id} <span className="text-[10px]">↗</span>
+                      </button>
+                    ) : (
+                      <span className="text-gray-400">—</span>
+                    )
+                  }
+                />
+                <Field label="Mobile" value={id.mobile} />
+                <Field label="Email" value={id.email} />
+                <Field label="DOB" value={id.dob} />
+                <Field label="Age" value={id.age} />
+                <Field label="City" value={id.city} />
+                <Field label="Pincode" value={id.pincode} />
+                <Field label="Customer Group" value={id.customer_group} />
+                <Field label="Source" value={id.primary_source} />
+              </Card>
+
+              <Card title="Behavioral Attributes" icon="🎯">
+                <Field label="First Bill" value={b.first_bill_date} />
+                <Field label="Last Bill" value={b.last_bill_date} />
+                <Field label="Recency (days)" value={fmtNum(b.recency_days)} />
+                <Field label="Total Bills" value={fmtNum(b.total_bills)} />
+                <Field label="Total Visits" value={fmtNum(b.total_visits)} />
+                <Field label="Total Spend" value={fmtINR(b.total_spend)} />
+                <Field label="Spend / Bill" value={fmtINR(b.spend_per_bill)} />
+                <Field label="Spend Decile" value={b.spend_decile} />
+                <Field label="Lifecycle" value={b.lifecycle_stage} />
+                <Field
+                  label="Fav Store"
+                  value={
+                    b.fav_store_name
+                      ? `${b.fav_store_name}${
+                          id.registered_store ? ` (${id.registered_store})` : ""
+                        }`
+                      : id.registered_store || "—"
+                  }
+                />
+                <Field label="Fav Day" value={b.fav_day} />
+              </Card>
+
+              <Card title="Reachability" icon="📡">
+                <Field label="DND" value={r.dnd} />
+                <Field label="Email Opt-In" value={r.accepts_email_marketing} />
+                <Field label="SMS Opt-In" value={r.accepts_sms_marketing} />
+                <Field label="WhatsApp" value={r.whatsapp} />
+                <Field label="Channel Presence" value={b.channel_presence} />
+              </Card>
+            </div>
+          )}
 
           {/* Omnichannel / Channel Split */}
-          <ChannelSplitTable b={b} />
+          {!isCesc && <ChannelSplitTable b={b} />}
 
           {/* Behavioral Insights */}
-          {data.behavioral && <BehavioralInsights b={b} />}
+          {!isCesc && data.behavioral && <BehavioralInsights b={b} />}
 
           {/* Row 2: Brand Propensity + Category Propensity */}
           {prop && prop.segments.length > 0 && (
@@ -382,12 +617,23 @@ export const CustomerSingleView: React.FC = () => {
                   {prop.segments.map((s) => {
                     const pct = ((s.normalized_score || 0) / maxNorm) * 100;
                     const color = SEGMENT_COLORS[s.label] || "#6366f1";
+
                     return (
                       <div key={s.label} className="flex items-center gap-3">
-                        <span className="w-36 text-xs text-gray-600 truncate" title={s.label}>{s.label}</span>
+                        <span
+                          className="w-36 text-xs text-gray-600 truncate"
+                          title={s.label}
+                        >
+                          {s.label}
+                        </span>
+
                         <div className="flex-1 h-5 bg-gray-100 rounded overflow-hidden">
-                          <div className="h-full rounded transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: color }} />
+                          <div
+                            className="h-full rounded transition-all duration-500"
+                            style={{ width: `${pct}%`, backgroundColor: color }}
+                          />
                         </div>
+
                         <span className="w-12 text-right text-xs font-semibold tabular-nums text-gray-700">
                           {((s.normalized_score || 0) * 100).toFixed(0)}%
                         </span>
@@ -395,14 +641,19 @@ export const CustomerSingleView: React.FC = () => {
                     );
                   })}
                 </div>
+
                 {prop.dominant_segment && (
                   <div className="mt-4 pt-3 border-t border-gray-100 flex items-center gap-2 text-sm">
                     <span className="text-gray-500">Dominant Affinity:</span>
                     <span
                       className="px-2 py-0.5 rounded-full text-xs font-semibold text-white"
-                      style={{ backgroundColor: SEGMENT_COLORS[prop.dominant_segment] || "#6366f1" }}
+                      style={{
+                        backgroundColor:
+                          SEGMENT_COLORS[prop.dominant_segment] || "#6366f1",
+                      }}
                     >
-                      {prop.dominant_segment} · {((prop.dominant_segment_score || 0) * 100).toFixed(0)}%
+                      {prop.dominant_segment} ·{" "}
+                      {((prop.dominant_segment_score || 0) * 100).toFixed(0)}%
                     </span>
                   </div>
                 )}
@@ -417,18 +668,27 @@ export const CustomerSingleView: React.FC = () => {
                       <th className="py-1.5 text-right">Normalized</th>
                     </tr>
                   </thead>
+
                   <tbody>
                     {prop.segments.map((s) => (
                       <tr key={s.label} className="border-b border-gray-50">
                         <td className="py-1.5 flex items-center gap-2">
-                          <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: SEGMENT_COLORS[s.label] || "#6366f1" }} />
+                          <span
+                            className="w-2.5 h-2.5 rounded-full"
+                            style={{
+                              backgroundColor:
+                                SEGMENT_COLORS[s.label] || "#6366f1",
+                            }}
+                          />
                           {s.label}
                         </td>
                         <td className="py-1.5 text-right tabular-nums text-gray-600">
                           {s.raw_score == null ? "—" : s.raw_score.toFixed(3)}
                         </td>
                         <td className="py-1.5 text-right tabular-nums font-semibold text-gray-800">
-                          {s.normalized_score == null ? "—" : (s.normalized_score * 100).toFixed(1) + "%"}
+                          {s.normalized_score == null
+                            ? "—"
+                            : (s.normalized_score * 100).toFixed(1) + "%"}
                         </td>
                       </tr>
                     ))}
@@ -438,7 +698,7 @@ export const CustomerSingleView: React.FC = () => {
             </div>
           )}
 
-          {/* Row 3: Top Articles + Category spend */}
+          {/* Row 3: Top Articles + Location Category Propensity */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
             {data.top_articles.length > 0 && (
               <Card title="Top 10 Articles (by Spend)" icon="🏆">
@@ -451,6 +711,7 @@ export const CustomerSingleView: React.FC = () => {
                         <th className="py-1.5 text-right">Spend</th>
                       </tr>
                     </thead>
+
                     <tbody>
                       {data.top_articles.map((a, i) => (
                         <tr key={i} className="border-b border-gray-50">
@@ -460,13 +721,18 @@ export const CustomerSingleView: React.FC = () => {
                             {a.segment && (
                               <span
                                 className="ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-medium text-white align-middle"
-                                style={{ backgroundColor: SEGMENT_COLORS[a.segment] || "#94a3b8" }}
+                                style={{
+                                  backgroundColor:
+                                    SEGMENT_COLORS[a.segment] || "#94a3b8",
+                                }}
                               >
                                 {a.segment}
                               </span>
                             )}
                           </td>
-                          <td className="py-1.5 text-right tabular-nums whitespace-nowrap">{fmtINR(a.spend)}</td>
+                          <td className="py-1.5 text-right tabular-nums whitespace-nowrap">
+                            {fmtINR(a.spend)}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -483,28 +749,46 @@ export const CustomerSingleView: React.FC = () => {
                       <th className="py-1.5 text-left">Segment</th>
                       <th className="py-1.5 text-right">Spend</th>
                       <th className="py-1.5 text-right">% Share</th>
-                      <th className="py-1.5 text-left pl-3 w-1/3">Normalized</th>
+                      <th className="py-1.5 text-left pl-3 w-1/3">
+                        Normalized
+                      </th>
                     </tr>
                   </thead>
+
                   <tbody>
                     {data.location_propensity.map((c, i) => {
                       const color = SEGMENT_COLORS[c.segment] || "#94a3b8";
+
                       return (
                         <tr key={i} className="border-b border-gray-50">
                           <td className="py-1.5">
-                            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium text-white"
-                              style={{ backgroundColor: color }}>
+                            <span
+                              className="px-1.5 py-0.5 rounded text-[10px] font-medium text-white"
+                              style={{ backgroundColor: color }}
+                            >
                               {c.segment}
                             </span>
                           </td>
-                          <td className="py-1.5 text-right tabular-nums whitespace-nowrap">{fmtINR(c.spend)}</td>
-                          <td className="py-1.5 text-right tabular-nums">{c.share_pct.toFixed(1)}%</td>
+                          <td className="py-1.5 text-right tabular-nums whitespace-nowrap">
+                            {fmtINR(c.spend)}
+                          </td>
+                          <td className="py-1.5 text-right tabular-nums">
+                            {c.share_pct.toFixed(1)}%
+                          </td>
                           <td className="py-1.5 pl-3">
                             <div className="flex items-center gap-2">
                               <div className="flex-1 h-2 bg-gray-100 rounded overflow-hidden">
-                                <div className="h-full rounded" style={{ width: `${c.normalized_score * 100}%`, backgroundColor: color }} />
+                                <div
+                                  className="h-full rounded"
+                                  style={{
+                                    width: `${c.normalized_score * 100}%`,
+                                    backgroundColor: color,
+                                  }}
+                                />
                               </div>
-                              <span className="w-8 text-right tabular-nums text-gray-600">{c.normalized_score.toFixed(2)}</span>
+                              <span className="w-8 text-right tabular-nums text-gray-600">
+                                {c.normalized_score.toFixed(2)}
+                              </span>
                             </div>
                           </td>
                         </tr>

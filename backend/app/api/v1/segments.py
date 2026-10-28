@@ -8,6 +8,8 @@ query compilation, and the attribute catalog.
 
 from __future__ import annotations
 
+import re
+
 from fastapi import APIRouter, HTTPException, Query
 
 from app.schemas.api_schemas import (
@@ -44,6 +46,8 @@ router = APIRouter(prefix="/segments", tags=["Segments"])
 
 # Service instance — in production, injected via FastAPI Depends
 service = SegmentationService()
+PREFIX_SEARCH_MIN_DIGITS = 8
+PREFIX_SEARCH_MAX_LIMIT = 50
 
 
 # =============================================================================
@@ -219,6 +223,7 @@ async def estimate_audience(payload: AudienceEstimateRequest):
         brand_code=payload.brand_code,
         rules=payload.rules,
         datalake_config=payload.datalake_config,
+        communication_group_view=payload.communication_group_view,
     )
     return result
 
@@ -233,6 +238,8 @@ async def get_segment_summary(payload: AudienceSummaryRequest):
         brand_code=payload.brand_code,
         rules=payload.rules,
         metrics=payload.metrics,
+        communication_group_view=payload.communication_group_view,
+        datalake_config=payload.datalake_config,
     )
     return result
 
@@ -248,6 +255,7 @@ async def preview_audience(payload: AudiencePreviewRequest):
         rules=payload.rules,
         limit=payload.limit,
         datalake_config=payload.datalake_config,
+        communication_group_view=payload.communication_group_view,
     )
     return result
 
@@ -267,6 +275,7 @@ async def compile_segment_query(payload: CompileRequest):
         brand_code=payload.brand_code,
         rules=payload.rules,
         datalake_config=payload.datalake_config,
+        communication_group_view=payload.communication_group_view,
     )
     return CompileResponse(sql=sql, brand_code=payload.brand_code)
 
@@ -293,26 +302,45 @@ async def get_attribute_values(
     attribute_key: str,
     limit: int = Query(500, ge=1, le=2000, description="Max distinct values to return"),
     brand_code: str = Query("spencers", description="Brand to query values from"),
+    search: str | None = Query(
+        None,
+        max_length=32,
+        description=(
+            "Optional prefix search for high-cardinality attributes (e.g. phone "
+            "numbers). Non-digits are ignored. Requires at least "
+            f"{PREFIX_SEARCH_MIN_DIGITS} digits; shorter input returns no values."
+        ),
+    ),
 ):
-    """
-    Return distinct non-null values for a specific attribute key.
-
-    Queries the real DWH column so the segment builder dropdown always shows
-    the actual stored values instead of the static catalog hints.
-
-    Example: GET /attributes/consent.accepts_sms_marketing/values?brand_code=natures_basket
-             → {"attribute_key": "consent.accepts_sms_marketing",
-                "values": ["No", "Yes"],
-                "count": 2,
-                "source": "database"}
-
-    Falls back gracefully — if the column cannot be resolved or the DB is
-    unreachable the endpoint still returns 200 with an empty values list so
-    the UI can fall back to its static example_values without an error state.
-    """
+     # ── Prefix-search mode ────────────────────────────────────────────────
+    if search is not None:
+        digits = re.sub(r"\D", "", search)
+ 
+        if len(digits) < PREFIX_SEARCH_MIN_DIGITS:
+            return {
+                "attribute_key": attribute_key,
+                "values": [],
+                "count": 0,
+                "source": "database",
+            }
+ 
+        values = await service._search_attribute_values_async(
+            attribute_key,
+            prefix=digits,
+            limit=min(limit, PREFIX_SEARCH_MAX_LIMIT),
+            brand_code=brand_code,
+        )
+        return {
+            "attribute_key": attribute_key,
+            "values": values,
+            "count": len(values),
+            "source": "database",
+        }
+ 
+    # ── Existing behaviour (unchanged) ────────────────────────────────────
     values = await service._get_attribute_distinct_values_async(attribute_key, limit=limit, brand_code=brand_code)
     source = "database"
-
+ 
     # When the DB returns nothing (column empty, table missing, or brand not yet
     # populated) fall back to the catalog's static example_values so the UI
     # always has something useful to show rather than a blank dropdown.
@@ -326,14 +354,13 @@ async def get_attribute_values(
                 if v is not None and str(v).strip()
             ]
             source = "catalog"
-
+ 
     return {
         "attribute_key": attribute_key,
         "values": values,
         "count": len(values),
         "source": source,
     }
-
 
 @router.get("/attributes/catalog", response_model=AttributeCatalogResponse)
 async def get_attribute_catalog(

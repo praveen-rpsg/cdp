@@ -1,0 +1,42 @@
+﻿=== 01_view_identity
+rows_total | distinct_entity | distinct_unified | unified_eq_entity | unified_eq_customer | distinct_consumer_no | null_consumer_no | multi_consumer_entities
+2980310 | 2980310 | 2980310 | 2980310 | 0 | 2728391 | 251919 | 423624
+
+=== 02_decision_categories
+grouping_decision | rows_n | distinct_consumer | distinct_person_groups | null_person_group | distinct_org_groups
+NO_RELIABLE_MATCH_RETAIN_EXISTING | 275627 | 275627 | 0 | 275627 | 0
+ORGANISATION_GROUP_CANDIDATE | 101417 | 101417 | 0 | 101417 | 10302
+PERSON_COMMUNICATION_GROUP | 411908 | 411908 | 338500 | 0 | 0
+PERSON_COMMUNICATION_GROUP_EMAIL | 233 | 233 | 128 | 0 | 0
+
+=== 03_decision_to_view_coverage
+grouping_decision | joined_rows | decision_consumers | matched_consumers | matched_entities
+NO_RELIABLE_MATCH_RETAIN_EXISTING | 275627 | 275627 | 275627 | 275627
+ORGANISATION_GROUP_CANDIDATE | 101417 | 101417 | 101417 | 101417
+PERSON_COMMUNICATION_GROUP | 411908 | 411908 | 411908 | 411908
+PERSON_COMMUNICATION_GROUP_EMAIL | 233 | 233 | 233 | 233
+
+=== 04_group_shape
+groups_n | max_entities_per_group | single_entity_groups | grouped_entities | max_groups_per_entity | entities_in_multiple_groups
+338628 | 11 | 278437 | 412141 | 1 | 0
+
+=== 05_tenure_bucket_ranges
+tenure_bucket | n | min_days | max_days
+None | 2980310 | 37 | 1282
+
+=== 06_consumption_bucket_ranges
+consumption_bucket | n | mc_min | mc_max | ac_min | ac_max | a3_min | a3_max
+None | 2980310 | 0 | 6003630 | 0 | 113292 | 0E-20 | 6003630.000000000000
+
+=== 07_burden_ratio_formula
+ratio_not_null | eq_arrear_over_net | eq_arrear_over_gross | eq_arrear_over_net_plus_arrear | eq_pct_arrear_over_net
+2681766 | 2320772 | 2320733 | 2320772 | 2681766
+
+=== 08_burden_ratio_sample
+outstanding_burden_ratio | arrear_amount | net_amount | gross_amount
+50.57045191645329416800 | 1945.42 | 3846.95 | 3882.18
+99.87160053499777084300 | 560.03 | 560.75 | 566.31
+154.6584048704689600 | 2428.57 | 1570.28 | 1583.88
+4.35352241537053979900 | 118.96 | 2732.50 | 2759.40
+176.8157894736842100 | 134.38 | 76 | 76.67
+

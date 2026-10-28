@@ -28,6 +28,14 @@ BRANDS = [
         "business_model": "grocery",
         "is_active": True,
     },
+        {
+        "id": "brand-cesc-006",
+        "code": "power_cesc",
+        "name": "CESC",
+        "channels": ["b2c", "b2b"],
+        "business_model": "utilities",
+        "is_active": True,
+    },
     {
         "id": "brand-corporate-005",
         "code": "corporate",

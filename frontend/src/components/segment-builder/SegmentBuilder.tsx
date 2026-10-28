@@ -66,6 +66,7 @@ export const SegmentBuilder: React.FC = () => {
     segmentType,
     rules,
     selectedBrandCode,
+    communicationGroupView,
     brands,
     audienceCount,
     isEstimating,
@@ -78,6 +79,7 @@ export const SegmentBuilder: React.FC = () => {
     setSegmentDescription,
     setSegmentType,
     setSelectedBrand,
+    setCommunicationGroupView,
     setIsEstimating,
     setAudienceCount,
     setCompiledSQL,
@@ -105,6 +107,10 @@ export const SegmentBuilder: React.FC = () => {
   const [savedSegs, setSavedSegs] = useState<any[]>([]);
   const [toast, setToast] = useState<ToastState | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [totalAudience, setTotalAudience] = useState<number | null>(null);
+  const [isLoadingTotalAudience, setIsLoadingTotalAudience] = useState(false);
+  const [activeAudience, setActiveAudience] = useState<number | null>(null);
+  const [isLoadingActiveAudience, setIsLoadingActiveAudience] = useState(false);
 
   const showToast = useCallback((message: string, type: "success" | "error" = "success") => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -114,6 +120,127 @@ export const SegmentBuilder: React.FC = () => {
 
   useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
 
+  useEffect(() => {
+    if (!selectedBrandCode) {
+      setTotalAudience(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const fetchTotalAudience = async () => {
+      setIsLoadingTotalAudience(true);
+
+      try {
+        const response = await fetch("/api/v1/segments/estimate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            brand_code: selectedBrandCode,
+            rules: {
+              root: {
+                type: "group",
+                logical_operator: "and",
+                conditions: [
+                  {
+                    type: "attribute",
+                    attribute_key: "identity.customer_id",
+                    operator: "exists",
+                    value: null,
+                  },
+                ],
+              },
+            },
+          }),
+        });
+
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+        const data = await response.json();
+
+        if (!cancelled) {
+          setTotalAudience(data.estimated_count ?? 0);
+        }
+      } catch (err) {
+        console.error("Failed to fetch total audience:", err);
+
+        if (!cancelled) {
+          setTotalAudience(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingTotalAudience(false);
+        }
+      }
+    };
+
+    fetchTotalAudience();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedBrandCode]);
+
+  useEffect(() => {
+    if (!selectedBrandCode) {
+      setActiveAudience(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const fetchActiveAudience = async () => {
+      setIsLoadingActiveAudience(true);
+
+      try {
+        const response = await fetch("/api/v1/segments/estimate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            brand_code: selectedBrandCode,
+            rules: {
+              root: {
+                type: "group",
+                logical_operator: "and",
+                conditions: [
+                  {
+                    type: "attribute",
+                    attribute_key: "cesc.consumer_account_status",
+                    operator: "equals",
+                    value: "L",
+                  },
+                ],
+              },
+            },
+          }),
+        });
+
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+        const data = await response.json();
+
+        if (!cancelled) {
+          setActiveAudience(data.estimated_count ?? 0);
+        }
+      } catch (err) {
+        console.error("Failed to fetch active audience:", err);
+
+        if (!cancelled) {
+          setActiveAudience(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingActiveAudience(false);
+        }
+      }
+    };
+
+    fetchActiveAudience();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedBrandCode]);
   useEffect(() => {
     const url = selectedBrandCode
       ? `/api/v1/segments/templates/list?brand_code=${selectedBrandCode}`
@@ -149,6 +276,16 @@ export const SegmentBuilder: React.FC = () => {
   };
 
   const handleEstimate = async () => { await estimateAudience(); };
+  
+  const audiencePercentage =
+    totalAudience !== null && totalAudience > 0 && audienceCount !== null
+      ? (audienceCount / totalAudience) * 100
+      : null;
+
+  const audienceDifference =
+    totalAudience !== null && activeAudience !== null
+      ? totalAudience - activeAudience
+      : null;
 
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showStudio, setShowStudio] = useState(false);
@@ -363,6 +500,19 @@ export const SegmentBuilder: React.FC = () => {
               </div>
             </div>
 
+            {selectedBrandCode === "power_cesc" && (
+              <div className="flex items-start justify-between gap-4 rounded-lg border border-indigo-100 bg-indigo-50/60 px-3 py-3">
+                <div>
+                  <div className="text-sm font-semibold text-indigo-900">CESC Group View</div>
+                  <div className="text-xs text-indigo-700 mt-0.5">Evaluate billing attributes on communication groups. Saved counts remain Live Audience counts.</div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                  <input type="checkbox" checked={communicationGroupView} onChange={(e) => setCommunicationGroupView(e.target.checked)} className="sr-only peer" />
+                  <span className="w-10 h-5 bg-gray-300 rounded-full peer peer-checked:bg-indigo-600 after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-5" />
+                </label>
+              </div>
+            )}
+
             {/* Builder / JSON tabs */}
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
               <div className="flex border-b border-gray-100">
@@ -403,12 +553,12 @@ export const SegmentBuilder: React.FC = () => {
                   <div className="pt-4">
                     <button
                       onClick={() => setShowStudio(true)}
-                      disabled={!selectedBrandCode}
+                      disabled={!selectedBrandCode || communicationGroupView}
                       className="w-full mb-2 px-3 py-2.5 text-sm bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-lg font-medium hover:opacity-90 disabled:opacity-40 flex items-center justify-center gap-2"
                     >
                       ⚡ Open Rank &amp; Split Studio
                     </button>
-                    <p className="text-[11px] text-gray-400">Prioritise by weighted ranking, split into groups with budget/count constraints, preview revenue, and save each group as a segment.</p>
+                    <p className="text-[11px] text-gray-400">{communicationGroupView ? "Rank & Split is unavailable in Group View." : "Prioritise by weighted ranking, split into groups with budget/count constraints, preview revenue, and save each group as a segment."}</p>
                   </div>
                 </div>
               </CollapsibleContent>
@@ -434,9 +584,10 @@ export const SegmentBuilder: React.FC = () => {
                 <div className="px-4 pb-5 border-t border-gray-100">
                   <div className="pt-4">
                     <label className="flex items-center gap-2.5 cursor-pointer mb-3">
-                      <input type="checkbox" checked={setOperation.enabled} onChange={(e) => setSetOperation({ enabled: e.target.checked })} className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500" />
+                      <input type="checkbox" checked={setOperation.enabled} disabled={communicationGroupView} onChange={(e) => setSetOperation({ enabled: e.target.checked })} className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500" />
                       <span className="text-sm font-medium text-gray-700">Enable Set Operations</span>
                     </label>
+                    {communicationGroupView && <p className="text-xs text-amber-700 mb-3">Set Operations are unavailable in Group View.</p>}
                     {setOperation.enabled && (
                       <div className="space-y-4 p-3 bg-blue-50/70 rounded-xl border border-blue-100">
                         <div>
@@ -561,22 +712,79 @@ export const SegmentBuilder: React.FC = () => {
 
             {/* Audience card */}
             <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Audience Size</h3>
-              <div className="text-center py-4">
-                {isEstimating ? (
-                  <div className="flex flex-col items-center gap-2">
-                    <div className="w-9 h-9 border-[3px] border-indigo-600 border-t-transparent rounded-full animate-spin" />
-                    <span className="text-gray-400 text-sm">Querying DWH…</span>
-                  </div>
-                ) : audienceCount !== null ? (
-                  <div>
-                    <div className="text-4xl font-black text-indigo-600 tabular-nums">{audienceCount.toLocaleString()}</div>
-                    <div className="text-xs text-gray-400 mt-1">matching profiles</div>
-                  </div>
-                ) : (
-                  <p className="text-gray-400 text-sm px-2 leading-relaxed">Add conditions and click "Estimate Audience"</p>
-                )}
-              </div>
+
+<div className="flex items-center justify-between gap-3 mb-1">
+  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+    Audience Size
+  </h3>
+</div>
+
+<div className="text-center pt-6 pb-4">
+  {isEstimating ? (
+    <div className="flex flex-col items-center gap-2">
+      <div className="w-9 h-9 border-[3px] border-indigo-600 border-t-transparent rounded-full animate-spin" />
+      <span className="text-gray-400 text-sm">Querying DWH…</span>
+    </div>
+  ) : audienceCount !== null ? (
+    <div>
+      <div className="text-4xl font-black text-indigo-600 tabular-nums">
+        {audienceCount.toLocaleString("en-IN")}
+      </div>
+
+      <div className="text-xs text-gray-400 mt-1">
+        matching profiles
+      </div>
+
+      {audiencePercentage !== null && (
+        <div className="text-xs text-emerald-700 mt-1">
+          {audiencePercentage.toFixed(3)}% of total
+        </div>
+      )}
+    </div>
+  ) : (
+    <p className="text-gray-400 text-sm px-2 leading-relaxed">
+      Add conditions and click "Estimate Audience"
+    </p>
+  )}
+</div>
+
+<div className="flex justify-center">
+  <div className="inline-flex items-center rounded-xl bg-slate-50 px-4 py-2.5">
+    <div className="grid grid-cols-2 gap-x-6">
+      <div>
+        <div className="text-[10px] uppercase tracking-wider text-gray-400">
+          Total
+        </div>
+        <div className="text-sm font-semibold text-gray-800 tabular-nums">
+          {isLoadingTotalAudience
+            ? "…"
+            : totalAudience !== null
+              ? totalAudience.toLocaleString("en-IN")
+              : "..."}
+        </div>
+      </div>
+
+      <div>
+        <div className="text-[10px] uppercase tracking-wider text-gray-400">
+          Active
+        </div>
+        <div className="text-sm font-semibold text-gray-800 tabular-nums">
+          {isLoadingActiveAudience
+            ? "…"
+            : activeAudience !== null
+              ? activeAudience.toLocaleString("en-IN")
+              : "..."}
+
+          {audienceDifference !== null && audienceDifference > 0 && (
+            <span className="ml-1 text-[11px] font-normal text-red-500">
+              (-{audienceDifference.toLocaleString("en-IN")})
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
               {setOperationCounts && (
                 <div className="mt-3 pt-3 border-t border-gray-100">

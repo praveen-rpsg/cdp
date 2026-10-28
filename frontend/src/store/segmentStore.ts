@@ -59,6 +59,7 @@ interface SegmentBuilderState {
 
   // Brand context
   selectedBrandCode: string | null;
+  communicationGroupView: boolean;
   brands: Brand[];
 
   // Attribute catalog
@@ -102,6 +103,7 @@ interface SegmentBuilderState {
   setSegmentDescription: (desc: string) => void;
   setSegmentType: (type: string) => void;
   setSelectedBrand: (code: string) => void;
+  setCommunicationGroupView: (enabled: boolean) => void;
   setBrands: (brands: Brand[]) => void;
   setAttributeCatalog: (attrs: AttributeDefinition[]) => void;
   setAudienceCount: (count: number | null) => void;
@@ -184,6 +186,7 @@ export const useSegmentStore = create<SegmentBuilderState>((set, get) => ({
   segmentType: "static",
   rules: createEmptyGroup("and"),
   selectedBrandCode: null,
+  communicationGroupView: false,
   brands: [],
   attributeCatalog: [],
   catalogLoaded: false,
@@ -214,12 +217,25 @@ export const useSegmentStore = create<SegmentBuilderState>((set, get) => ({
   setSegmentDescription: (desc) => set({ segmentDescription: desc, isDirty: true }),
   setSegmentType: (type) => set({ segmentType: type, isDirty: true }),
   setSelectedBrand: (code) => {
-    set({ selectedBrandCode: code, audienceCount: null });
+    set({
+      selectedBrandCode: code,
+      audienceCount: null,
+      communicationGroupView: code === "power_cesc" ? get().communicationGroupView : false,
+    });
     // If we haven't loaded the catalog, fetch it
     if (!get().catalogLoaded && !get().isFetchingCatalog) {
       get().fetchCatalog();
     }
   },
+  setCommunicationGroupView: (enabled) => set((state) => ({
+    communicationGroupView: enabled,
+    audienceCount: null,
+    ...(enabled ? {
+      rankConfig: { ...state.rankConfig, enabled: false },
+      splitConfig: { ...state.splitConfig, enabled: false },
+      setOperation: { ...state.setOperation, enabled: false },
+    } : {}),
+  })),
   setBrands: (brands) => set({ brands }),
   setAttributeCatalog: (attrs) => set({ attributeCatalog: attrs, catalogLoaded: true }),
   setAudienceCount: (count) => set({ audienceCount: count }),
@@ -419,7 +435,7 @@ export const useSegmentStore = create<SegmentBuilderState>((set, get) => ({
   },
 
   estimateAudience: async () => {
-    const { selectedBrandCode, isEstimating, getSegmentDefinition } = get();
+    const { selectedBrandCode, communicationGroupView, isEstimating, getSegmentDefinition } = get();
     if (!selectedBrandCode || isEstimating) return;
 
     set({ isEstimating: true, audienceCount: null });
@@ -431,6 +447,7 @@ export const useSegmentStore = create<SegmentBuilderState>((set, get) => ({
         body: JSON.stringify({
           brand_code: selectedBrandCode,
           rules: getSegmentDefinition(),
+          communication_group_view: communicationGroupView,
         }),
       });
       const data = await response.json();
@@ -452,7 +469,7 @@ export const useSegmentStore = create<SegmentBuilderState>((set, get) => ({
   },
 
   fetchSummary: async () => {
-    const { selectedBrandCode, isFetchingSummary, getSegmentDefinition } = get();
+    const { selectedBrandCode, communicationGroupView, isFetchingSummary, getSegmentDefinition } = get();
     if (!selectedBrandCode || isFetchingSummary) return;
 
     set({ isFetchingSummary: true, summaryMetrics: null });
@@ -464,6 +481,7 @@ export const useSegmentStore = create<SegmentBuilderState>((set, get) => ({
         body: JSON.stringify({
           brand_code: selectedBrandCode,
           rules: getSegmentDefinition(),
+          communication_group_view: communicationGroupView,
         }),
       });
       const data = await response.json();
@@ -498,7 +516,7 @@ export const useSegmentStore = create<SegmentBuilderState>((set, get) => ({
   },
 
   previewAudience: async () => {
-    const { selectedBrandCode, isPreviewing, getSegmentDefinition } = get();
+    const { selectedBrandCode, communicationGroupView, isPreviewing, getSegmentDefinition } = get();
     if (!selectedBrandCode || isPreviewing) return;
 
     set({ isPreviewing: true, previewProfiles: [] });
@@ -511,6 +529,7 @@ export const useSegmentStore = create<SegmentBuilderState>((set, get) => ({
           brand_code: selectedBrandCode,
           rules: getSegmentDefinition(),
           limit: 50,
+          communication_group_view: communicationGroupView,
         }),
       });
       const data = await response.json();
