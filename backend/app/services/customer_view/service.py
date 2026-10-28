@@ -140,6 +140,20 @@ class CustomerViewService:
                     f"ORDER BY mobile LIMIT %s"
                 )
                 rows = await self._query(sql, (like, like, int(limit)))
+            elif brand_code == "power_cesc":
+                sql = (
+                    "SELECT "
+                    "cesc_entity_id AS id, "
+                    "mobile_number AS mobile, "
+                    "customer_name AS name "
+                    "FROM cesc_serving.customer_360_seg_v "
+                    "WHERE mobile_number ILIKE %s "
+                    "OR CAST(cesc_entity_id AS TEXT) ILIKE %s "
+                    "OR customer_name ILIKE %s "
+                    "ORDER BY mobile_number NULLS LAST "
+                    "LIMIT %s"
+                )
+                rows = await self._query(sql, (like, like, like, int(limit)))
             else:
                 if brand_code not in BRAND_SCHEMA_CONFIG:
                     return []
@@ -165,6 +179,11 @@ class CustomerViewService:
         if brand_code not in BRAND_SCHEMA_CONFIG:
             raise ValueError(f"Unknown brand_code: {brand_code}")
 
+        if brand_code == "power_cesc":
+            return await self._get_cesc_single_view(
+                customer_id=customer_id,
+                mobile=mobile,
+            )
         cfg = BRAND_SCHEMA_CONFIG[brand_code]
         tbl_p = cfg["unified_profiles"]
         tbl_ba = cfg["customer_behavioral_attributes"]
@@ -334,7 +353,77 @@ class CustomerViewService:
         )
         await self._cache_set(cache_key, result.model_dump())
         return result
+        
+    async def _get_cesc_single_view(
+        self,
+        customer_id: str | None,
+        mobile: str | None,
+    ) -> CustomerSingleViewResponse:
+        """Build the CESC single-customer view from the CESC serving view."""
+        if customer_id:
+            where = "CAST(cesc_entity_id AS TEXT) = %s"
+            params: tuple = (customer_id,)
+        elif mobile:
+            where = "RIGHT(COALESCE(mobile_number, ''), 10) = RIGHT(%s, 10)"
+            params = (mobile,)
+        else:
+            return CustomerSingleViewResponse(found=False, brand_code="power_cesc")
 
+        sql = f"""
+            SELECT cesc_entity_id, customer_name, mobile_number, email_id,
+                   consumer_account_status, monthly_consumption,
+                   avg_consumption_3m, avg_consumption_6m, consumption_trend,
+                   lifetime_spend, annual_billed_value,
+                   payment_behaviour_profile, arrear_status,
+                   digital_engagement_status, complaint_status
+              FROM cesc_serving.customer_360_seg_v
+             WHERE {where}
+             LIMIT 1
+        """
+        rows = await self._query(sql, params)
+        if not rows:
+            return CustomerSingleViewResponse(found=False, brand_code="power_cesc")
+
+        c = rows[0]
+
+        identity = IdentityBlock(
+            unified_id=_s(c.get("cesc_entity_id")) or "",
+            name=_s(c.get("customer_name")),
+            email=_s(c.get("email_id")),
+            mobile=_s(c.get("mobile_number")),
+            primary_source="CESC",
+            status=_s(c.get("consumer_account_status")),
+        )
+
+        behavioral = BehavioralBlock(
+            monthly_consumption=_f(c.get("monthly_consumption")),
+            avg_consumption_3m=_f(c.get("avg_consumption_3m")),
+            avg_consumption_6m=_f(c.get("avg_consumption_6m")),
+            consumption_trend=_s(c.get("consumption_trend")),
+            total_spend=_f(c.get("lifetime_spend")),
+            annual_billed_value=_f(c.get("annual_billed_value")),
+            payment_behaviour_profile=_s(c.get("payment_behaviour_profile")),
+            arrear_status=_s(c.get("arrear_status")),
+        )
+
+        reachability = ReachabilityBlock(
+            dnd=None,
+            accepts_email_marketing=None,
+            accepts_sms_marketing=None,
+            whatsapp=None,
+            gw_customer_flag=None,
+            consumer_account_status=_s(c.get("consumer_account_status")),
+            digital_engagement_status=_s(c.get("digital_engagement_status")),
+            complaint_status=_s(c.get("complaint_status")),
+        )
+
+        return CustomerSingleViewResponse(
+            found=True,
+            brand_code="power_cesc",
+            identity=identity,
+            behavioral=behavioral,
+            reachability=reachability,
+        )
     async def _fetch_propensity(
         self, uid: str, brand_code: str, tbl_prop: str
     ) -> PropensityBlock | None:

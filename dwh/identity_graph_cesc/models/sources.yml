@@ -1,0 +1,11 @@
+version: 2
+
+sources:
+  - name: staging
+    schema: staging
+    tables:
+      - name: stg_cesc_bill
+      - name: stg_cesc_cih
+      - name: stg_cesc_cih_consumer_numbers
+      - name: stg_cesc_cih_bill_months
+      - name: stg_cesc_lifetime

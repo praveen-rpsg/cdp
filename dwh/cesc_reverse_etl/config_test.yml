@@ -1,0 +1,67 @@
+# ============================================================================
+# CESC UNIFY360 - Reverse ETL Phase 1 (POC / TEST) configuration
+# ============================================================================
+# Separate from Spencer's reverse ETL. Nothing here is shared with dwh/reverse_etl/.
+# The audience below is a POC demo audience. It is NOT an official CESC business rule.
+
+database:
+  host: localhost
+  port: 5432
+  dbname: cdp_meta
+  user: cdp
+  # password is NOT stored here. It is read from the PG_PASSWORD environment variable.
+  # PG_HOST / PG_PORT / PG_DB / PG_USER, if set, override the values above.
+
+source:
+  schema: silver_gold
+  table: cesc_customer_360
+  primary_key: cesc_entity_id        # downstream sync / upsert identity key
+
+# Outbound contract: exactly these fields, in this order. No SELECT *.
+contract_size: 17
+contract:
+  # IDENTITY
+  - {source_column: cesc_entity_id,            outbound_field: cesc_entity_id}
+  - {source_column: customer_id,               outbound_field: customer_id}
+  - {source_column: consumer_no,               outbound_field: consumer_no}
+  # CONTACT
+  - {source_column: customer_name,             outbound_field: customer_name}
+  - {source_column: mobile_number,             outbound_field: mobile_number}
+  - {source_column: email_id,                  outbound_field: email_id}
+  # ACCOUNT
+  - {source_column: consumer_account_status,   outbound_field: consumer_account_status}
+  # CONSUMPTION
+  - {source_column: monthly_consumption,       outbound_field: monthly_consumption}
+  - {source_column: avg_consumption_3m,        outbound_field: avg_consumption_3m}
+  - {source_column: avg_consumption_6m,        outbound_field: avg_consumption_6m}
+  - {source_column: consumption_trend,         outbound_field: consumption_trend}
+  # VALUE
+  - {source_column: lifetime_spend,            outbound_field: lifetime_spend}
+  - {source_column: annual_billed_value,       outbound_field: annual_billed_value}
+  # PAYMENT / ARREARS
+  - {source_column: payment_behaviour_profile, outbound_field: payment_behaviour_profile}
+  - {source_column: arrear_status,             outbound_field: arrear_status}
+  # DIGITAL / SERVICE
+  - {source_column: digital_engagement_status, outbound_field: digital_engagement_status}
+  - {source_column: complaint_status,          outbound_field: complaint_status}
+
+# POC demo audience (transparent, deterministic, small)
+audience:
+  id: cesc_poc_demo_l_positive_spend_test
+  name: "CESC POC Demo Audience (status L, lifetime_spend > 0)"
+  description: >
+    POC/demo audience only. Not an official CESC business rule.
+    Filter uses actual Gold columns and is limited to a small deterministic set.
+  filter: "consumer_account_status = 'L' AND lifetime_spend > 0"
+  order_by: cesc_entity_id
+  limit: 100
+
+# CSV is the only destination in Phase 1
+destination:
+  type: csv
+  output_dir: exports_test          # resolved relative to this config file's folder
+
+# Audit table (created by dwh/sql/cesc_reverse_etl_tables_test.sql)
+audit:
+  schema: cesc_reverse_etl
+  table: sync_log_test

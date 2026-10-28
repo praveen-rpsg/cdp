@@ -44,12 +44,11 @@ services:
     ports:
       - "8000:8000"
     environment:
-      CDP_DATABASE_URL: postgresql+asyncpg://cdp:cdp@postgres:5432/cdp_meta
-      CDP_REDIS_URL: redis://redis:6379/0
+      CDP_DATABASE_URL: postgresql+asyncpg://cdp:cdp@host.docker.internal:5432/cdp_meta
       CDP_DEBUG: "true"
       CDP_AWS_REGION: ap-south-1
       # Spencer's DWH connection (Docker postgres)
-      PG_HOST: postgres
+      PG_HOST: host.docker.internal
       PG_PORT: "5432"
       PG_DB: cdp_meta
       PG_USER: cdp

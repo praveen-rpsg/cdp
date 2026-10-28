@@ -40,6 +40,7 @@ from app.schemas.segment_rules import SegmentDefinition
 from app.services.query_engine.compiler import AthenaCompiler
 from app.services.query_engine.pg_compiler import (
     PgCompiler,
+    CescGroupViewPgCompiler,
     CorporatePgCompiler,
     compile_ranked,
     compile_set_operation,
@@ -50,7 +51,11 @@ from app.services.query_engine.pg_compiler import (
 logger = logging.getLogger(__name__)
 
 
-def _make_compiler(brand_code: str) -> PgCompiler:
+def _make_compiler(
+    brand_code: str,
+    communication_group_view: bool = False,
+    datalake_config: dict | None = None,
+) -> PgCompiler:
     """
     Factory that returns the appropriate SQL compiler for a brand.
 
@@ -58,7 +63,28 @@ def _make_compiler(brand_code: str) -> PgCompiler:
     everything else → PgCompiler           (per-brand DWH with unified_profiles)
     """
     if brand_code == "corporate":
+        if communication_group_view:
+            raise ValueError("communication_group_view is only supported for power_cesc")
         return CorporatePgCompiler()
+
+    if brand_code == "power_cesc":
+        if communication_group_view:
+            config = datalake_config or {}
+            return CescGroupViewPgCompiler(
+                view_name=config.get("cesc_serving_view"),
+                decision_table=config.get("cesc_grouping_decision_table"),
+            )
+        return PgCompiler(
+            brand_code=brand_code,
+            schema_mapping={
+                 "identity.phone": "p.mobile_number",
+                 "identity.mobile": "p.mobile_number",
+                 "cesc.consumer_account_status": "p.consumer_account_status",
+            },
+        )
+
+    if communication_group_view:
+        raise ValueError("communication_group_view is only supported for power_cesc")
     return PgCompiler(brand_code=brand_code)
 
 # ---------------------------------------------------------------------------
@@ -732,9 +758,21 @@ class SegmentationService:
     # QUERY COMPILATION
     # =========================================================================
 
-    def compile_segment_query(self, brand_code: str, rules: dict, datalake_config: dict | None = None) -> str:
+    async def _validate_cesc_group_view_map(self, compiler: PgCompiler) -> None:
+        if isinstance(compiler, CescGroupViewPgCompiler):
+            duplicate_rows = await self._execute_pg(compiler.validate_member_map_sql())
+            if duplicate_rows:
+                raise ValueError("CESC Group View member map maps one consumer_no to multiple groups")
+
+    def compile_segment_query(
+        self,
+        brand_code: str,
+        rules: dict,
+        datalake_config: dict | None = None,
+        communication_group_view: bool = False,
+    ) -> str:
         definition = SegmentDefinition.model_validate(rules)
-        compiler = _make_compiler(brand_code)
+        compiler = _make_compiler(brand_code, communication_group_view, datalake_config)
         sql = compiler.compile(definition)
 
         if definition.rank and definition.rank.enabled and definition.rank.attribute:
@@ -752,14 +790,27 @@ class SegmentationService:
 
         return sql
 
-    def compile_count_query(self, brand_code: str, rules: dict, datalake_config: dict | None = None) -> str:
+    def compile_count_query(
+        self,
+        brand_code: str,
+        rules: dict,
+        datalake_config: dict | None = None,
+        communication_group_view: bool = False,
+    ) -> str:
         definition = SegmentDefinition.model_validate(rules)
-        compiler = _make_compiler(brand_code)
+        compiler = _make_compiler(brand_code, communication_group_view, datalake_config)
         return compiler.compile_count(definition)
 
-    def compile_preview_query(self, brand_code: str, rules: dict, limit: int = 100, datalake_config: dict | None = None) -> str:
+    def compile_preview_query(
+        self,
+        brand_code: str,
+        rules: dict,
+        limit: int = 100,
+        datalake_config: dict | None = None,
+        communication_group_view: bool = False,
+    ) -> str:
         definition = SegmentDefinition.model_validate(rules)
-        compiler = _make_compiler(brand_code)
+        compiler = _make_compiler(brand_code, communication_group_view, datalake_config)
         return compiler.compile_preview(definition, limit=limit)
 
     def compile_athena_query(self, brand_code: str, rules: dict, datalake_config: dict | None = None) -> str:
@@ -776,12 +827,27 @@ class SegmentationService:
     # AUDIENCE ESTIMATION
     # =========================================================================
 
-    async def estimate_audience_size(self, brand_code: str, rules: dict, datalake_config: dict | None = None) -> dict:
+    async def estimate_audience_size(
+        self,
+        brand_code: str,
+        rules: dict,
+        datalake_config: dict | None = None,
+        communication_group_view: bool = False,
+    ) -> dict:
         """Estimate audience size — count query cached in Redis for 10 min."""
         import json as _json
         logger.info(f"[ESTIMATE] brand={brand_code}")
         definition = SegmentDefinition.model_validate(rules)
-        compiler = _make_compiler(brand_code)
+        compiler = _make_compiler(brand_code, communication_group_view, datalake_config)
+
+        if communication_group_view and (
+            (definition.set_operation and definition.set_operation.enabled)
+            or (definition.split and definition.split.enabled)
+            or (definition.rank and definition.rank.enabled)
+        ):
+            raise ValueError("Set Operations, Split, and Rank & Split are unavailable in CESC Group View")
+
+        await self._validate_cesc_group_view_map(compiler)
 
         base_sql = compiler.compile(definition)
         count_sql = compiler.compile_count(definition)
@@ -814,7 +880,7 @@ class SegmentationService:
                         entry_rules = saved.get("rules")
                 if not entry_rules:
                     continue
-                entry_compiler = _make_compiler(brand_code)
+                entry_compiler = _make_compiler(brand_code, communication_group_view, datalake_config)
                 # A rank/split child stores membership under _rank_split; use its base root.
                 root_only = {"root": entry_rules.get("root", entry_rules)}
                 entry_def = SegmentDefinition.model_validate(root_only)
@@ -875,13 +941,21 @@ class SegmentationService:
     # SEGMENT SUMMARY
     # =========================================================================
 
-    async def get_segment_summary(self, brand_code: str, rules: dict, metrics: list[str] | None = None) -> dict:
+    async def get_segment_summary(
+        self,
+        brand_code: str,
+        rules: dict,
+        metrics: list[str] | None = None,
+        communication_group_view: bool = False,
+        datalake_config: dict | None = None,
+    ) -> dict:
         """Calculate behavioral summary metrics — result cached in Redis for 10 min."""
         if metrics is None:
             metrics = ["total_spend", "avg_spend", "total_bills", "avg_visits", "spend_per_bill", "spend_per_visit"]
 
         definition = SegmentDefinition.model_validate(rules)
-        compiler = _make_compiler(brand_code)
+        compiler = _make_compiler(brand_code, communication_group_view, datalake_config)
+        await self._validate_cesc_group_view_map(compiler)
         summary_sql = compiler.compile_summary(definition, metrics)
 
         try:
@@ -928,9 +1002,21 @@ class SegmentationService:
     # AUDIENCE PREVIEW
     # =========================================================================
 
-    async def preview_audience(self, brand_code: str, rules: dict, limit: int = 100, datalake_config: dict | None = None) -> dict:
+    async def preview_audience(
+        self,
+        brand_code: str,
+        rules: dict,
+        limit: int = 100,
+        datalake_config: dict | None = None,
+        communication_group_view: bool = False,
+    ) -> dict:
         """Get a preview of matching profiles — not cached (limit is variable)."""
-        preview_sql = self.compile_preview_query(brand_code, rules, limit, datalake_config)
+        preview_sql = self.compile_preview_query(
+            brand_code, rules, limit, datalake_config, communication_group_view
+        )
+
+        compiler = _make_compiler(brand_code, communication_group_view, datalake_config)
+        await self._validate_cesc_group_view_map(compiler)
 
         try:
             profiles = await self._execute_pg(preview_sql)
@@ -1015,41 +1101,54 @@ class SegmentationService:
         from app.services.query_engine.pg_compiler import SPENCERS_SCHEMA_MAP, CORPORATE_SCHEMA_MAP
         import re
 
+        # CESC monthly billing has its own grain/table and must not be
+        # resolved through the shared Spencer's schema map.
+        if brand_code == "power_cesc" and attribute_key == "cesc.bill_ac_month":
+            sql = (
+                "SELECT DISTINCT bill_ac_month::TEXT AS val "
+                "FROM silver_gold.cesc_customer_monthly "
+                "WHERE bill_ac_month ~ '^[0-9]{6}$' "
+                "ORDER BY bill_ac_month DESC"
+            )
+        else:
+            sql = None
+
         # Resolve the column reference from the appropriate schema map
-        if brand_code == "corporate":
+        if sql is None and brand_code == "corporate":
             col_ref = CORPORATE_SCHEMA_MAP.get(attribute_key)
             # Auto-derive spn.*/nbl.* keys not in the map
             if not col_ref:
                 parts = attribute_key.split(".", 1)
                 if len(parts) == 2 and parts[0] in ("spn", "nbl"):
                     col_ref = f"corp.{parts[0]}_{parts[1]}"
-        else:
+        elif sql is None:
             col_ref = SPENCERS_SCHEMA_MAP.get(attribute_key)
 
-        if not col_ref:
+        if sql is None and not col_ref:
             return []
 
-        m = re.search(r'\b([a-z_]+)\.([a-z_]+)\b', col_ref, re.IGNORECASE)
-        if not m:
-            return []
+        if sql is None:
+            m = re.search(r'\b([a-z_]+)\.([a-z_]+)\b', col_ref, re.IGNORECASE)
+            if not m:
+                return []
 
-        alias = m.group(1)
-        col_name = m.group(2)
-        alias_map = self._ALIAS_TO_TABLE_BY_BRAND.get(
-            brand_code, self._ALIAS_TO_TABLE_BY_BRAND["spencers"]
-        )
-        table = alias_map.get(alias)
-        if not table:
-            return []
+            alias = m.group(1)
+            col_name = m.group(2)
+            alias_map = self._ALIAS_TO_TABLE_BY_BRAND.get(
+                brand_code, self._ALIAS_TO_TABLE_BY_BRAND["spencers"]
+            )
+            table = alias_map.get(alias)
+            if not table:
+                return []
 
-        sql = (
-            f"SELECT DISTINCT {col_name}::TEXT AS val "
-            f"FROM {table} "
-            f"WHERE {col_name} IS NOT NULL "
-            f"  AND TRIM({col_name}::TEXT) != '' "
-            f"ORDER BY val "
-            f"LIMIT {int(limit)}"
-        )
+            sql = (
+                f"SELECT DISTINCT {col_name}::TEXT AS val "
+                f"FROM {table} "
+                f"WHERE {col_name} IS NOT NULL "
+                f"  AND TRIM({col_name}::TEXT) != '' "
+                f"ORDER BY val "
+                f"LIMIT {int(limit)}"
+            )
 
         # Check cache first
         redis = _redis
@@ -1077,6 +1176,134 @@ class SegmentationService:
                 logger.warning(f"Redis SET failed: {e}")
 
         return values
+    # -------------------------------------------------------------------------
+    # PREFIX SEARCH — high-cardinality attributes (e.g. phone numbers)
+    # -------------------------------------------------------------------------
+
+    # Explicit (brand_code, attribute_key) -> (table_or_view, column) targets for
+    # prefix search. Needed for brands the alias/schema maps used by
+    # `_get_attribute_distinct_values_async` do not cover (CESC).
+    _SEARCH_TARGET_OVERRIDES: dict[tuple[str, str], tuple[str, str]] = {
+        ("power_cesc", "identity.phone"): (
+            "cesc_serving.customer_360_seg_v",
+            "mobile_number",
+        ),
+    }
+
+    def _resolve_search_target(
+        self, attribute_key: str, brand_code: str
+    ) -> tuple[str, str] | None:
+        """
+        Resolve (table, column) for prefix search. Identifiers only ever come
+        from code-defined maps, never from the request, and are re-validated.
+        """
+        import re
+
+        override = self._SEARCH_TARGET_OVERRIDES.get((brand_code, attribute_key))
+        if override:
+            table, col_name = override
+        else:
+            # Unlike the distinct-values path, do NOT silently fall back to
+            # Spencer's tables for an unknown brand.
+            if brand_code not in self._ALIAS_TO_TABLE_BY_BRAND:
+                return None
+
+            from app.services.query_engine.pg_compiler import (
+                SPENCERS_SCHEMA_MAP,
+                CORPORATE_SCHEMA_MAP,
+            )
+
+            if brand_code == "corporate":
+                col_ref = CORPORATE_SCHEMA_MAP.get(attribute_key)
+                if not col_ref:
+                    parts = attribute_key.split(".", 1)
+                    if len(parts) == 2 and parts[0] in ("spn", "nbl"):
+                        col_ref = f"corp.{parts[0]}_{parts[1]}"
+            else:
+                col_ref = SPENCERS_SCHEMA_MAP.get(attribute_key)
+
+            if not col_ref:
+                return None
+            m = re.search(r"\b([a-z_]+)\.([a-z_]+)\b", col_ref, re.IGNORECASE)
+            if not m:
+                return None
+            table = self._ALIAS_TO_TABLE_BY_BRAND[brand_code].get(m.group(1))
+            col_name = m.group(2)
+            if not table:
+                return None
+
+        ident = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+        if not ident.match(col_name) or not all(ident.match(p) for p in table.split(".")):
+            return None
+        return table, col_name
+
+    async def _search_attribute_values_async(
+        self,
+        attribute_key: str,
+        *,
+        prefix: str,
+        limit: int,
+        brand_code: str = "spencers",
+    ) -> list[str]:
+        """
+        Prefix search over the FULL underlying column (not the 2,000-value
+        list). Returns at most `limit` (<= 50) distinct matching values.
+        Values are bound as parameters; identifiers come from code-defined maps.
+        """
+        import re
+
+        digits = re.sub(r"\D", "", prefix or "")
+        if not digits:
+            return []
+        limit = max(1, min(int(limit), 50))
+
+        target = self._resolve_search_target(attribute_key, brand_code)
+        if not target:
+            logger.warning(
+                "Prefix search: no table/column target for attribute '%s' (brand '%s'). "
+                "Add it to SegmentationService._SEARCH_TARGET_OVERRIDES.",
+                attribute_key, brand_code,
+            )
+            return []
+        table, col_name = target
+
+        # Escape LIKE wildcards, then anchor as a prefix pattern.
+        escaped = digits.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = escaped + "%"
+
+        # Short-lived cache: repeated keystrokes / identical searches.
+        redis = _redis
+        cache_key = _cache_key("valsearch", f"{brand_code}:{attribute_key}:{digits}:{limit}")
+        if redis:
+            try:
+                cached = await redis.get(cache_key)
+                if cached is not None:
+                    return json.loads(cached)
+            except Exception as e:
+                logger.warning(f"Redis GET failed: {e}")
+
+        sql = (
+            f"SELECT DISTINCT {col_name}::TEXT AS val "
+            f"FROM {table} "
+            f"WHERE {col_name}::TEXT LIKE %s ESCAPE '\\' "
+            f"ORDER BY val "
+            f"LIMIT %s"
+        )
+
+        try:
+            rows = await self._exec_params(sql, (pattern, limit))
+            values = [row["val"] for row in rows if row.get("val")]
+        except Exception as e:
+            logger.warning(f"Prefix search failed for '{attribute_key}': {e}")
+            return []
+
+        if redis:
+            try:
+                await redis.setex(cache_key, 300, json.dumps(values))
+            except Exception as e:
+                logger.warning(f"Redis SET failed: {e}")
+
+        return values   
 
     # =========================================================================
     # SCHEDULED COMPUTATION

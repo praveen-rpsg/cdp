@@ -1,0 +1,482 @@
+version: 2
+
+models:
+  - name: cesc_customer_monthly
+    description: >
+      CESC Gold customer-month foundation. Grain: exactly one row per cesc_entity_id x bill_ac_month (enforced by
+      tests/assert_cesc_customer_monthly_grain.sql and a unique index). Built from stg_cesc_bill (full history; cesc_bill_spine is
+      not used) joined to RESOLVED identity mappings. A bill enters only if it maps to exactly one existing cesc_entity_id;
+      bills linked to several entities are excluded and reported by tests/assert_cesc_bill_single_entity.sql. When an entity has
+      several bills in a month: additive amounts and total_unit are SUMMED (entity-month aggregates); every other source
+      attribute, including avg_unit and load_kw, is copied from ONE primary bill (latest bill_date, then largest net_amount, then
+      bill_source_key). No payment-transaction metrics exist here.
+    columns:
+      # ---- keys and time ----
+      - name: cesc_entity_id
+        description: "Canonical UNIFY360 identity key (text-cast). The only identity key; never CUSTOMER_ID, consumer_no or R1."
+        tests: [not_null]
+      - name: bill_ac_month
+        description: "Source billing month (YYYYMM)."
+        tests: [not_null]
+      - name: month_start
+        description: "Derived: first day of bill_ac_month; NULL if bill_ac_month does not match YYYYMM."
+      - name: month_seq
+        description: "Derived: year*12+month of month_start; NULL if month_start is NULL."
+      # ---- counts / lineage ----
+      - name: bills_in_month
+        description: "Number of resolved, single-entity bills combined into the (A) aggregates of this entity-month."
+      - name: consumer_numbers_in_month
+        description: "Distinct consumer_no values among those bills."
+      - name: primary_bill_source_key
+        description: "Key of the primary bill (latest bill_date, then largest net_amount, then bill_source_key). Each source bill is primary for at most one row."
+      # ---- (B) primary-bill source attributes - copied unchanged from ONE bill, never aggregated ----
+      - name: customer_id
+        description: "(B) Primary-bill source value. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE (the customer name) is deliberately not carried as an address."
+      - name: consumer_no
+        description: "(B) Primary-bill source value. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE (the customer name) is deliberately not carried as an address."
+      - name: check_digit
+        description: "(B) Primary-bill source value. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE (the customer name) is deliberately not carried as an address."
+      - name: regional_office
+        description: "(B) Primary-bill source value. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE (the customer name) is deliberately not carried as an address."
+      - name: supply_address
+        description: "(B) Primary-bill source value. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE (the customer name) is deliberately not carried as an address."
+      - name: address_line_two
+        description: "(B) Primary-bill source value. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE (the customer name) is deliberately not carried as an address."
+      - name: address_line_three
+        description: "(B) Primary-bill source value. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE (the customer name) is deliberately not carried as an address."
+      - name: address_line_four
+        description: "(B) Primary-bill source value. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE (the customer name) is deliberately not carried as an address."
+      - name: address_line_five
+        description: "(B) Primary-bill source value. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE (the customer name) is deliberately not carried as an address."
+      - name: address_line_six
+        description: "(B) Primary-bill source value. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE (the customer name) is deliberately not carried as an address."
+      - name: pin_cd
+        description: "(B) Primary-bill source value. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE (the customer name) is deliberately not carried as an address."
+      - name: consumer_type
+        description: "(B) Primary-bill source value. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE (the customer name) is deliberately not carried as an address."
+      - name: supply_type
+        description: "(B) Primary-bill source value. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE (the customer name) is deliberately not carried as an address."
+      - name: supply_mode
+        description: "(B) Primary-bill source value. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE (the customer name) is deliberately not carried as an address."
+      - name: road_code
+        description: "(B) Primary-bill source value. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE (the customer name) is deliberately not carried as an address."
+      - name: premises_no
+        description: "(B) Primary-bill source value. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE (the customer name) is deliberately not carried as an address."
+      - name: lamp_post_no
+        description: "(B) Primary-bill source value. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE (the customer name) is deliberately not carried as an address."
+      - name: voltage_status
+        description: "(B) Primary-bill source value. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE (the customer name) is deliberately not carried as an address."
+      - name: tax_status
+        description: "(B) Primary-bill source value. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE (the customer name) is deliberately not carried as an address."
+      - name: consumer_status_code
+        description: "(B) Primary-bill source value. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE (the customer name) is deliberately not carried as an address."
+      - name: consumer_account_status
+        description: "(B) Primary-bill source value. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE (the customer name) is deliberately not carried as an address."
+      - name: public_body_status_code
+        description: "(B) Primary-bill source value. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE (the customer name) is deliberately not carried as an address."
+      - name: subsidy_status
+        description: "(B) Primary-bill source value. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE (the customer name) is deliberately not carried as an address."
+      - name: advance_payment_status
+        description: "(B) Primary-bill source value. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE (the customer name) is deliberately not carried as an address."
+      - name: bill_type
+        description: "(B) Primary-bill source value. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE (the customer name) is deliberately not carried as an address."
+      - name: ebill_status
+        description: "(B) Primary-bill source value. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE (the customer name) is deliberately not carried as an address."
+      - name: bill_date
+        description: "(B) Primary-bill source value. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE (the customer name) is deliberately not carried as an address."
+      - name: due_date
+        description: "(B) Primary-bill source value. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE (the customer name) is deliberately not carried as an address."
+      - name: email_id
+        description: "(B) Primary-bill email, only when its validity flag is true."
+      - name: mobile_number
+        description: "(B) Primary-bill mobile, only when its validity flag is true."
+      - name: payment_channel
+        description: "(B) Primary-bill MODE_OF_PMNT_PROCESSED, upper-cased/trimmed; raw source value preserved."
+      - name: payment_method
+        description: "(B) Primary-bill PMNT_MODE_DESC, trimmed; raw source value preserved."
+      - name: digital_payment_status
+        description: "NULL. The ONLINE/OFFLINE/NOPMNT -> DIGITAL/NON_DIGITAL/NO_PAYMENT mapping is not defined in any specification available to the model; use payment_channel for the raw value."
+      # ---- (A) entity-month aggregates - SUM over all resolved bills of the month ----
+      - name: net_amount
+        description: "(A) Sum of the per-bill amount over resolved bills of the entity-month (additive). NULL inputs are ignored; all-NULL gives NULL."
+      - name: rebate_amount
+        description: "(A) Sum of the per-bill amount over resolved bills of the entity-month (additive). NULL inputs are ignored; all-NULL gives NULL."
+      - name: gross_amount
+        description: "(A) Sum of the per-bill amount over resolved bills of the entity-month (additive). NULL inputs are ignored; all-NULL gives NULL."
+      - name: arrear_amount
+        description: "(A) Sum of the per-bill amount over resolved bills of the entity-month (additive). NULL inputs are ignored; all-NULL gives NULL."
+      - name: adjustment_amount
+        description: "(A) Sum of the per-bill amount over resolved bills of the entity-month (additive). NULL inputs are ignored; all-NULL gives NULL."
+      - name: govt_duty
+        description: "(A) Sum of the per-bill amount over resolved bills of the entity-month (additive). NULL inputs are ignored; all-NULL gives NULL."
+      - name: meter_rent_amount
+        description: "(A) Sum of the per-bill amount over resolved bills of the entity-month (additive). NULL inputs are ignored; all-NULL gives NULL."
+      - name: security_deposit_amount
+        description: "(A) Sum of the per-bill amount over resolved bills of the entity-month (additive). NULL inputs are ignored; all-NULL gives NULL."
+      - name: energy_charges_amount
+        description: "(A) Sum of the per-bill amount over resolved bills of the entity-month (additive). NULL inputs are ignored; all-NULL gives NULL."
+      - name: fixed_demand_charges
+        description: "(A) Sum of the per-bill amount over resolved bills of the entity-month (additive). NULL inputs are ignored; all-NULL gives NULL."
+      - name: monthly_variable_cost_adjustment
+        description: "(A) Sum of the per-bill amount over resolved bills of the entity-month (additive). NULL inputs are ignored; all-NULL gives NULL."
+      - name: fppas_amount
+        description: "(A) Sum of the per-bill amount over resolved bills of the entity-month (additive). NULL inputs are ignored; all-NULL gives NULL."
+      - name: advance_payment_adjustment
+        description: "(A) Sum of the per-bill amount over resolved bills of the entity-month (additive). NULL inputs are ignored; all-NULL gives NULL."
+      - name: total_unit
+        description: "(A) Sum of TOTAL_UNIT over resolved bills of the entity-month."
+      # ---- (B) single-record values used for like-with-like derivations ----
+      - name: primary_bill_total_unit
+        description: "(B) TOTAL_UNIT of the primary bill only (single source record)."
+      - name: avg_unit
+        description: "(B) Primary-bill AVG_UNIT. Non-additive; never summed."
+      - name: load_kw
+        description: "(B) Primary-bill LOAD (connected load). Never summed; a total connected load is not defined by the contract."
+      # ---- derived ----
+      - name: outstanding_burden_ratio
+        description: "Derived: arrear_amount / net_amount * 100 (aggregates with aggregates); NULL when net_amount is 0 or NULL."
+      - name: consumption_deviation_pct
+        description: "Derived: (primary_bill_total_unit - avg_unit) / avg_unit * 100 on the SAME source record; NULL when avg_unit is 0 or NULL."
+      - name: effective_bill_cost_per_unit
+        description: "Derived: selected amount (var cesc_bill_amount_basis, default net_amount, a working choice; see effective_cost_basis) / total_unit, both entity-month aggregates; NULL when total_unit is 0."
+      - name: energy_charge_contribution_pct
+        description: "Derived: energy_charges_amount / gross_amount * 100 (aggregates); NULL when gross_amount is 0 or NULL."
+      - name: has_arrear_flag
+        description: "Derived: arrear_amount > 0; NULL when arrear_amount is NULL."
+      - name: arrear_persistence_months
+        description: "Derived: consecutive CALENDAR months, ending at this month, with arrear_amount > 0 (0 if arrear = 0; NULL if arrear or month is unknown)."
+      - name: arrear_recovery_rate
+        description: "Derived: (previous_arrear_amount - arrear_amount) / previous_arrear_amount * 100; NULL unless previous_arrear_amount > 0."
+      - name: previous_arrear_amount
+        description: "Derived: arrear_amount of the previous billing month PRESENT for the entity (not necessarily the previous calendar month)."
+      - name: effective_cost_basis
+        description: "Amount basis used by effective_bill_cost_per_unit (net_amount or gross_amount)."
+      - name: source_loaded_at
+        description: "Latest _loaded_at among the combined bills."
+      - name: gold_built_at
+        description: "Build timestamp."
+
+  - name: cesc_customer_360
+    description: >
+      CESC site-facing Gold customer contract. Grain: exactly one row per cesc_entity_id (spine = cesc_entity_nodes; enforced by
+      the unique test below and tests/assert_cesc_customer_monthly_grain.sql). Column groups: identity/lineage; (A) entity-month
+      aggregates of the latest month; (B) primary/latest source-record attributes; (C) canonical/CIH attributes; (D) lifetime
+      attributes; (E) derived; (F) intentionally NULL. R1 (r1_source_ref) is an auxiliary reference only: it is never a key, grain
+      or deduplication basis, and lifetime attributes are joined only for an R1 that maps to exactly one entity. Nothing is
+      defaulted or invented. Every output column of the model is listed below.
+    columns:
+      # ---- identity / lineage ----
+      - name: cesc_entity_id
+        description: "Canonical UNIFY360 identity key - the only identity key."
+        tests: [not_null, unique]
+      - name: entity_type
+        description: "Lineage: cesc_entity_nodes.entity_type."
+      - name: primary_cih_source_row_key
+        description: "Lineage: the entity's primary CIH row in cesc_entity_nodes."
+      - name: r1_source_ref
+        description: "Auxiliary source reference of the primary CIH row. NOT an identity key."
+      - name: r1_entity_count
+        description: "Lineage: number of distinct cesc_entity_id values whose primary CIH row carries this r1_source_ref. > 1 means the R1 is ambiguous and all lifetime attributes are NULL for those entities; NULL when there is no R1."
+      - name: entity_first_seen_at
+        description: "Lineage: cesc_entity_nodes.first_seen_at."
+      - name: entity_last_updated_at
+        description: "Lineage: cesc_entity_nodes.last_updated_at."
+      # ---- (B) primary / latest source-record attributes (one real bill of the latest month) ----
+      - name: customer_id
+        description: "(B) Value from the primary bill of the entity's latest billing month. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE is the customer name and is never used as an address."
+      - name: consumer_no
+        description: "(B) Value from the primary bill of the entity's latest billing month. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE is the customer name and is never used as an address."
+      - name: check_digit
+        description: "(B) Value from the primary bill of the entity's latest billing month. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE is the customer name and is never used as an address."
+      - name: consumer_type
+        description: "(B) Value from the primary bill of the entity's latest billing month. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE is the customer name and is never used as an address."
+      - name: consumer_status_code
+        description: "(B) Value from the primary bill of the entity's latest billing month. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE is the customer name and is never used as an address."
+      - name: consumer_account_status
+        description: "(B) Value from the primary bill of the entity's latest billing month. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE is the customer name and is never used as an address."
+      - name: public_body_status
+        description: "(B) Value from the primary bill of the entity's latest billing month. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE is the customer name and is never used as an address."
+      - name: regional_office
+        description: "(B) Value from the primary bill of the entity's latest billing month. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE is the customer name and is never used as an address."
+      - name: supply_address
+        description: "(B) Value from the primary bill of the entity's latest billing month. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE is the customer name and is never used as an address."
+      - name: address_line_two
+        description: "(B) Value from the primary bill of the entity's latest billing month. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE is the customer name and is never used as an address."
+      - name: address_line_three
+        description: "(B) Value from the primary bill of the entity's latest billing month. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE is the customer name and is never used as an address."
+      - name: address_line_four
+        description: "(B) Value from the primary bill of the entity's latest billing month. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE is the customer name and is never used as an address."
+      - name: address_line_five
+        description: "(B) Value from the primary bill of the entity's latest billing month. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE is the customer name and is never used as an address."
+      - name: address_line_six
+        description: "(B) Value from the primary bill of the entity's latest billing month. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE is the customer name and is never used as an address."
+      - name: road_code
+        description: "(B) Value from the primary bill of the entity's latest billing month. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE is the customer name and is never used as an address."
+      - name: premises_no
+        description: "(B) Value from the primary bill of the entity's latest billing month. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE is the customer name and is never used as an address."
+      - name: lamp_post_no
+        description: "(B) Value from the primary bill of the entity's latest billing month. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE is the customer name and is never used as an address."
+      - name: supply_type
+        description: "(B) Value from the primary bill of the entity's latest billing month. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE is the customer name and is never used as an address."
+      - name: supply_mode
+        description: "(B) Value from the primary bill of the entity's latest billing month. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE is the customer name and is never used as an address."
+      - name: voltage_status
+        description: "(B) Value from the primary bill of the entity's latest billing month. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE is the customer name and is never used as an address."
+      - name: tax_status
+        description: "(B) Value from the primary bill of the entity's latest billing month. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE is the customer name and is never used as an address."
+      - name: bill_ac_month
+        description: "(B) Value from the primary bill of the entity's latest billing month. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE is the customer name and is never used as an address."
+      - name: bill_date
+        description: "(B) Value from the primary bill of the entity's latest billing month. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE is the customer name and is never used as an address."
+      - name: due_date
+        description: "(B) Value from the primary bill of the entity's latest billing month. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE is the customer name and is never used as an address."
+      - name: subsidy_status
+        description: "(B) Value from the primary bill of the entity's latest billing month. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE is the customer name and is never used as an address."
+      - name: advance_payment_status
+        description: "(B) Value from the primary bill of the entity's latest billing month. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE is the customer name and is never used as an address."
+      - name: bill_type
+        description: "(B) Value from the primary bill of the entity's latest billing month. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE is the customer name and is never used as an address."
+      - name: ebill_status
+        description: "(B) Value from the primary bill of the entity's latest billing month. customer_id / consumer_no are source references, not identity keys. ADDRESS_LINE_ONE is the customer name and is never used as an address."
+      - name: load_kw
+        description: "(B) LOAD of the latest month's primary bill - a single source record, never summed."
+      - name: average_consumption
+        description: "(B) AVG_UNIT of the latest month's primary bill - a single source record, never summed."
+      - name: payment_channel
+        description: "(B) Raw payment channel of the primary bill."
+      - name: payment_method
+        description: "(B) Raw payment method (PMNT_MODE_DESC) of the primary bill."
+      - name: digital_payment_status
+        description: "NULL - the ONLINE/OFFLINE/NOPMNT -> DIGITAL/NON_DIGITAL/NO_PAYMENT mapping is not defined in the available specification."
+      - name: consumption_deviation
+        description: "(B/E) (primary-bill TOTAL_UNIT - AVG_UNIT) / AVG_UNIT * 100 on the same source record; NULL when AVG_UNIT is 0 or NULL."
+      - name: email_id
+        description: "Canonical entity email, then CIH, then latest-bill email (validated only)."
+      - name: mobile_number
+        description: "Canonical entity mobile, then CIH normalized mobile, then latest-bill mobile (validated only). Invalid CIH numbers are not reconstructed."
+      - name: pincode
+        description: "Bill PIN_CD (contract source); falls back to canonical then CIH pincode."
+      # ---- (A) entity-month aggregates of the latest billing month ----
+      - name: latest_month_bills_count
+        description: "Number of resolved bills combined into the (A) values. If > 1 the amounts are sums, not one source record."
+      - name: latest_month_consumer_numbers
+        description: "Distinct consumer numbers among those bills."
+      - name: net_amount
+        description: "(A) Sum of the per-bill amount over all resolved bills of the latest billing month."
+      - name: gross_amount
+        description: "(A) Sum of the per-bill amount over all resolved bills of the latest billing month."
+      - name: rebate_amount
+        description: "(A) Sum of the per-bill amount over all resolved bills of the latest billing month."
+      - name: arrear_amount
+        description: "(A) Sum of the per-bill amount over all resolved bills of the latest billing month."
+      - name: adjustment_amount
+        description: "(A) Sum of the per-bill amount over all resolved bills of the latest billing month."
+      - name: govt_duty
+        description: "(A) Sum of the per-bill amount over all resolved bills of the latest billing month."
+      - name: meter_rent_amount
+        description: "(A) Sum of the per-bill amount over all resolved bills of the latest billing month."
+      - name: security_deposit_amount
+        description: "(A) Sum of the per-bill amount over all resolved bills of the latest billing month."
+      - name: energy_charges_amount
+        description: "(A) Sum of the per-bill amount over all resolved bills of the latest billing month."
+      - name: fixed_demand_charges
+        description: "(A) Sum of the per-bill amount over all resolved bills of the latest billing month."
+      - name: monthly_variable_cost_adjustment
+        description: "(A) Sum of the per-bill amount over all resolved bills of the latest billing month."
+      - name: fppas_amount
+        description: "(A) Sum of the per-bill amount over all resolved bills of the latest billing month."
+      - name: advance_payment_adjustment
+        description: "(A) Sum of the per-bill amount over all resolved bills of the latest billing month."
+      - name: monthly_consumption
+        description: "(A) Sum of TOTAL_UNIT over all resolved bills of the latest billing month."
+      # ---- (C) canonical / CIH attributes ----
+      - name: customer_name
+        description: "(C) CIH name_normalized, falling back to canonical_name. Bill ADDRESS_LINE_ONE is not used."
+      - name: city
+        description: "(C) CIH city."
+      - name: cih_house_no
+        description: "(C) CIH house number; kept separate from bill address fields."
+      - name: cih_floor
+        description: "(C) CIH floor; kept separate from bill address fields."
+      - name: cih_street
+        description: "(C) CIH street; kept separate from bill address fields."
+      - name: dnd
+        description: "(C) CIH raw DND value."
+      - name: mobile_capable
+        description: "(C) CIH is_mobile_normalized flag."
+      # ---- (D) lifetime attributes - NULL unless the entity's R1 maps to exactly one entity ----
+      - name: first_bill_date
+        description: "(D) Lifetime first bill date (stg_cesc_lifetime via unambiguous R1)."
+      - name: last_bill_date
+        description: "(D) Lifetime last bill date (same rule)."
+      - name: tenure_days
+        description: "(D) Source TENURE (same rule)."
+      - name: tenure_months
+        description: "(D) tenure_days / 30 (approximate, per contract)."
+      - name: bill_count
+        description: "(D) Lifetime bill count (same rule)."
+      - name: lifetime_spend
+        description: "(D) SPEND_Lifetime_d as computed by the source system. Not the same as lifetime_bill_value."
+      - name: recency_days
+        description: "(D) Source recency in days (same rule)."
+      # ---- (E) derived from the latest month ----
+      - name: outstanding_burden_ratio
+        description: "(E) arrear_amount / net_amount * 100 on the latest month's aggregates."
+      - name: arrear_persistence_months
+        description: "(E) Consecutive calendar months, ending at the latest month, with arrear > 0."
+      - name: arrear_recovery_rate
+        description: "(E) (previous available month arrear - latest arrear) / previous arrear * 100; NULL unless previous arrear > 0."
+      - name: effective_bill_cost_per_unit
+        description: "(E) Selected bill amount (var cesc_bill_amount_basis; working choice, not an approval) / total_unit of the latest month."
+      - name: energy_charge_contribution
+        description: "(E) energy_charges_amount / gross_amount * 100 on the latest month's aggregates."
+      # ---- (E) derived from history (windows = the entity's latest N billing months PRESENT; not required to be calendar-consecutive) ----
+      - name: avg_consumption_3m
+        description: "(E) Average of entity-month total_unit over the latest 3 billing months present. With var cesc_require_full_window=true it is NULL unless consumption_months_3m = 3."
+      - name: avg_consumption_6m
+        description: "(E) As above, 6 months."
+      - name: avg_consumption_12m
+        description: "(E) As above, 12 months."
+      - name: consumption_months_3m
+        description: "Number of months with a total_unit value in the 3M window; a full window has 3."
+      - name: consumption_months_6m
+        description: "As above; a full window has 6."
+      - name: consumption_months_12m
+        description: "As above; a full window has 12."
+      - name: consumption_volatility
+        description: "(E) Sample std-dev / mean of total_unit over the latest 12 billing months present; NULL with fewer than 2 months. Window and sample-vs-population are working assumptions, not contract definitions."
+      - name: preferred_payment_method
+        description: "(E) Most frequent PMNT_MODE_DESC over the latest 12 billing months present; MIXED on a tie. Window and tie rule are working assumptions."
+      - name: arrears_trend
+        description: "(E) NULL unless BOTH vars cesc_trend_window_months and cesc_trend_stable_tolerance are set (the specification defines neither). Then INCREASING / DECREASING / STABLE (|slope per month| <= tolerance) from the regression slope of arrear_amount."
+      - name: consumption_trend
+        description: "(E) Same gating and rule as arrears_trend, on total_unit."
+      - name: billing_trend
+        description: "(E) Same gating and rule as arrears_trend, on the selected bill amount (cesc_bill_amount_basis)."
+      - name: persistent_arrear_flag
+        description: "(E) NULL unless BOTH vars cesc_persistent_arrear_n and cesc_persistent_arrear_operator ('>' or '>=') are set; then arrear_persistence_months <operator> N. Neither N nor the operator is defined by the available specification."
+      - name: lifetime_bill_value
+        description: "(E) NULL until var cesc_bill_value_approved_basis is set (Net vs Gross not approved); then the sum of that basis over all Gold monthly history. Distinct from lifetime_spend."
+      - name: annual_billed_value
+        description: "(E) NULL until var cesc_bill_value_approved_basis is set; then the sum of that basis for annual_year."
+      - name: annual_consumption
+        description: "(E) Sum of total_unit for annual_year. The available specification does not define \"the defined year\"; default is the calendar year of each entity's latest bill month (working default, see annual_year_source). Partial years are possible - check annual_months_available."
+      - name: annual_year
+        description: "Calendar year used for the annual_* columns (var cesc_annual_year, else the working default)."
+      - name: annual_year_source
+        description: "CONFIGURED_VAR_cesc_annual_year or WORKING_DEFAULT_CALENDAR_YEAR_OF_LATEST_BILL_MONTH. Not an authoritative CESC business definition."
+      - name: annual_months_available
+        description: "Number of billing months of annual_year present for the entity."
+      # ---- (F) intentionally NULL: no source field / reference table ----
+      - name: district
+        description: "NULL - no district field; regional office is an operational code and no reference table was supplied."
+      - name: state
+        description: "NULL - no source field."
+      - name: tariff_type
+        description: "NULL - no tariff code/name field and no tariff schedule reference."
+      - name: meter_number
+        description: "NULL - no source field."
+      - name: meter_type
+        description: "NULL - no source field."
+      - name: added_load
+        description: "NULL - EVENT_TYPE codes unconfirmed, no data dictionary."
+      - name: theft_tag
+        description: "NULL - no confirmed source mapping."
+      - name: advance_payment_amount
+        description: "NULL - only status and adjustment amount exist in the bill."
+      # ---- (F) intentionally NULL: approved rules / thresholds not available ----
+      - name: load_category
+        description: "NULL - approved load-category rules not available."
+      - name: tenure_bucket
+        description: "NULL - approved tenure-bucket rules not available."
+      - name: consumption_bucket
+        description: "NULL - approved consumption-bucket rules not available."
+      - name: consumption_slab
+        description: "NULL - approved slab rules not available."
+      - name: seasonal_consumption_profile
+        description: "NULL - season definition and thresholds not specified."
+      - name: consumption_anomaly_status
+        description: "NULL - approved thresholds not available."
+      - name: bill_shock_status
+        description: "NULL - approved thresholds not available."
+      - name: arrear_status
+        description: "NULL - classification precedence and persistence N not approved."
+      - name: payment_method_stability
+        description: "NULL - no rule or period for STABLE vs VARIABLE."
+      - name: payment_channel_migration
+        description: "NULL - recent/previous comparison periods not defined."
+      # ---- (F) intentionally NULL: payment transaction data unavailable ----
+      - name: monthly_payment_fulfilment_rate
+        description: "NULL - needs actual payment amount and an approved expected-amount definition."
+      - name: on_time_payment_score
+        description: "NULL - needs actual payment date and bill due date."
+      - name: payment_consistency_score
+        description: "NULL - needs payment transaction history."
+      - name: payment_behaviour_profile
+        description: "NULL - needs the payment inputs above."
+      - name: annual_payment_fulfilment_rate
+        description: "NULL - needs payment transaction history."
+      # ---- (F) intentionally NULL: SDK / event / CRM sources not available ----
+      - name: app_status
+        description: "NULL - no SDK / event / CRM source available."
+      - name: app_payment_status
+        description: "NULL - no SDK / event / CRM source available."
+      - name: digital_engagement_status
+        description: "NULL - no SDK / event / CRM source available."
+      - name: current_payment_status
+        description: "NULL - no SDK / event / CRM source available."
+      - name: complaint_status
+        description: "NULL - no SDK / event / CRM source available."
+      - name: complaint_behaviour
+        description: "NULL - no SDK / event / CRM source available."
+      - name: service_behaviour
+        description: "NULL - no SDK / event / CRM source available."
+      - name: digital_friction_status
+        description: "NULL - no SDK / event / CRM source available."
+      - name: service_dependency
+        description: "NULL - no SDK / event / CRM source available."
+      - name: customer_effort_status
+        description: "NULL - no SDK / event / CRM source available."
+      - name: repeat_issue_status
+        description: "NULL - no SDK / event / CRM source available."
+      - name: service_resolution_status
+        description: "NULL - no SDK / event / CRM source available."
+      - name: digital_adoption_gap
+        description: "NULL - no SDK / event / CRM source available."
+      - name: digital_self_service_status
+        description: "NULL - no SDK / event / CRM source available."
+      - name: digital_migration_status
+        description: "NULL - no SDK / event / CRM source available."
+      - name: device_type
+        description: "NULL - no SDK / event / CRM source available."
+      - name: screen_resolution
+        description: "NULL - no SDK / event / CRM source available."
+      - name: digital_language
+        description: "NULL - no SDK / event / CRM source available."
+      - name: device_manufacturer
+        description: "NULL - no SDK / event / CRM source available."
+      - name: app_installed_date
+        description: "NULL - no SDK / event / CRM source available."
+      - name: app_version
+        description: "NULL - no SDK / event / CRM source available."
+      - name: operating_system
+        description: "NULL - no SDK / event / CRM source available."
+      - name: os_version
+        description: "NULL - no SDK / event / CRM source available."
+      - name: browser
+        description: "NULL - no SDK / event / CRM source available."
+      - name: most_active_channel
+        description: "NULL - no SDK / event / CRM source available."
+      - name: most_active_time
+        description: "NULL - no SDK / event / CRM source available."
+      - name: most_active_day
+        description: "NULL - no SDK / event / CRM source available."
+      # ---- history coverage / lineage ----
+      - name: billed_months_available
+        description: "Number of billing months with a parseable month in Gold monthly history; NULL for entities with no bills."
+      - name: first_billed_month
+        description: "Earliest parsed billing month."
+      - name: latest_billed_month
+        description: "Latest parsed billing month (drives the 'latest month' columns)."
+      - name: gold_built_at
+        description: "Build timestamp."

@@ -26,6 +26,7 @@ from app.schemas.segment_rules import (
     TimeWindow,
     TimeWindowType,
 )
+from app.schemas.profile_attributes import ATTRIBUTE_BY_KEY, AttributeDataType
 
 
 def _looks_like_date(val: str) -> bool:
@@ -106,6 +107,7 @@ def _coerce_equals_sql(column: str, value, negate: bool = False) -> str:
 #           loc = bronze.raw_location_master (joined via store)
 #           gs = silver_identity.identity_graph_summary
 SPENCERS_SCHEMA_MAP = {
+    "cesc.customer_id": "ba.source_customer_id",
     # ── Identity ──
     "identity.customer_id": "p.unified_id",
     "identity.email": "p.email",
@@ -325,6 +327,13 @@ BRAND_SCHEMA_CONFIG: dict[str, dict[str, str]] = {
         "raw_location_master":             "nb_bronze.raw_location_master",
         "s_fact_bill_transactions":        "nb_silver.s_fact_bill_transactions",
         "customer_propensity_scores":      "nb_silver_reverse_etl.customer_propensity_scores_nbl",
+    },
+    "power_cesc": {
+        "unified_profiles":                "cesc_serving.customer_360_seg_v",
+        "customer_behavioral_attributes":  "cesc_serving.customer_360_seg_v",
+        "identity_graph_summary":          "cesc_serving.customer_360_seg_v",
+        "raw_location_master":             "cesc_serving.customer_360_seg_v",
+        "s_fact_bill_transactions":        "cesc_serving.customer_360_seg_v",
     },
 }
 
@@ -548,7 +557,8 @@ class PgCompiler:
         """Compile a full segment definition into PostgreSQL SQL."""
         self._reset()
         where_clause = self._compile_group(definition.root)
-        return self._build_query(where_clause, definition, select="DISTINCT p.unified_id AS customer_id")
+        identity_column = "p.cesc_entity_id" if self.brand_code == "power_cesc" else "p.unified_id"
+        return self._build_query(where_clause, definition, select=f"DISTINCT {identity_column} AS customer_id")
 
     def compile_count(self, definition: SegmentDefinition) -> str:
         """Compile a COUNT query — COUNT(DISTINCT) directly avoids subquery materialisation."""
@@ -557,9 +567,10 @@ class PgCompiler:
         # Strip LIMIT/ORDER from the count definition — they're irrelevant for counting
         from app.schemas.segment_rules import SegmentDefinition as _SD
         count_def = _SD(root=definition.root)
+        identity_column = "p.cesc_entity_id" if self.brand_code == "power_cesc" else "p.unified_id"
         return self._build_query(
             where_clause, count_def,
-            select="COUNT(DISTINCT p.unified_id) AS audience_count"
+            select=f"COUNT(DISTINCT {identity_column}) AS audience_count"
         )
 
     def compile_summary(self, definition: SegmentDefinition, metrics: list[str]) -> str:
@@ -570,8 +581,10 @@ class PgCompiler:
         self._reset()
         where_clause = self._compile_group(definition.root)
         
-        # Ensure ba table is joined
-        self._needs_ba = True
+        # CESC is a single, one-row-per-entity serving view. Other brands
+        # retain their existing behavioral-attribute join.
+        if self.brand_code != "power_cesc":
+            self._needs_ba = True
         
         # Map requested metrics to SQL aggregations
         agg_map = {
@@ -585,7 +598,19 @@ class PgCompiler:
             "spend_per_visit": "CASE WHEN SUM(COALESCE(ba.total_visits, 0)) > 0 THEN SUM(COALESCE(ba.total_spend, 0)) / SUM(COALESCE(ba.total_visits, 0)) ELSE 0 END",
         }
         
-        select_parts = ["COUNT(*) AS audience_size"]
+        # CESC has no bill/visit columns; only spend metrics map (to lifetime_spend).
+        if self.brand_code == "power_cesc":
+            agg_map = {
+                "total_spend": "SUM(COALESCE(p.lifetime_spend, 0))",
+                "avg_spend": "AVG(COALESCE(p.lifetime_spend, 0))",
+            }
+
+        audience_count = (
+            "COUNT(DISTINCT p.cesc_entity_id)"
+            if self.brand_code == "power_cesc"
+            else "COUNT(*)"
+        )
+        select_parts = [f"{audience_count} AS audience_size"]
         for m in metrics:
             if m in agg_map:
                 select_parts.append(f"{agg_map[m]} AS {m}")
@@ -600,15 +625,26 @@ class PgCompiler:
         # DISTINCT dedupes identical rows that a one-to-many JOIN (ba/gs/loc)
         # can produce — all selected columns come from the profile table, so
         # genuine duplicates are fully identical.
-        select = (
-            "DISTINCT p.unified_id AS customer_id,\n"
-            "  p.canonical_mobile AS mobile,\n"
-            "  p.display_name AS name,\n"
-            "  p.email,\n"
-            "  p.pincode,\n"
-            "  p.registered_store,\n"
-            "  p.city"
-        )
+        if self.brand_code == "power_cesc":
+            select = (
+                "DISTINCT p.cesc_entity_id AS customer_id,\n"
+                "  p.mobile_number AS mobile,\n"
+                "  p.customer_name AS name,\n"
+                "  p.email_id AS email,\n"
+                "  NULL::text AS pincode,\n"
+                "  NULL::text AS registered_store,\n"
+                "  NULL::text AS city"
+            )
+        else:
+            select = (
+                "DISTINCT p.unified_id AS customer_id,\n"
+                "  p.canonical_mobile AS mobile,\n"
+                "  p.display_name AS name,\n"
+                "  p.email,\n"
+                "  p.pincode,\n"
+                "  p.registered_store,\n"
+                "  p.city"
+            )
         preview_def = SegmentDefinition(
             root=definition.root,
             limit=limit,
@@ -640,22 +676,22 @@ class PgCompiler:
         parts.append(f"FROM {self._tbl_profiles} p")
 
         # Standard JOINs based on what's needed
-        if self._needs_ba:
+        if self._needs_ba and self.brand_code != "power_cesc":
             parts.append(
                 f"LEFT JOIN {self._tbl_ba} ba "
                 "ON ba.customer_id = p.unified_id"
             )
-        if self._needs_gs:
+        if self._needs_gs and self.brand_code != "power_cesc":
             parts.append(
                 f"LEFT JOIN {self._tbl_gs} gs "
                 "ON gs.unified_id = p.unified_id"
             )
-        if self._needs_loc:
+        if self._needs_loc and self.brand_code != "power_cesc":
             parts.append(
                 f"INNER JOIN {self._tbl_loc} loc "
                 "ON TRIM(loc.store_code) = TRIM(p.registered_store)"
             )
-        if self._needs_prop and self._tbl_prop:
+        if self._needs_prop and self._tbl_prop and self.brand_code != "power_cesc":
             parts.append(
                 f"LEFT JOIN {self._tbl_prop} prop "
                 "ON prop.customer_id = p.unified_id"
@@ -726,6 +762,8 @@ class PgCompiler:
             raise ValueError(f"Unknown condition type: {type(condition)}")
 
     def _compile_attribute(self, cond: AttributeCondition) -> str:
+        if self.brand_code == "power_cesc" and cond.attribute_key == "cesc.bill_ac_month":
+            return self._compile_cesc_bill_ac_month(cond)
         # BT (bill transaction) attributes use EXISTS subqueries against line-item data
         if cond.attribute_key.startswith("bt."):
             return self._compile_bt_attribute(cond)
@@ -733,10 +771,87 @@ class PgCompiler:
         if cond.attribute_key.startswith("affinity.") and not self._tbl_prop:
             return "1=0"
         col = self._resolve_column(cond.attribute_key)
-        sql = self._operator_to_sql(col, cond.operator, cond.value, cond.second_value)
+
+        # CESC phone numbers are stored as text. Treat phone equality as
+        # text equality so digit-only phone values are not coerced to integers.
+        if (
+            self.brand_code == "power_cesc"
+            and cond.attribute_key in ("identity.phone", "identity.mobile")
+            and cond.operator in ("equals", "not_equals")
+        ):
+            value = str(cond.value) if cond.value is not None else ""
+            escaped = value.replace("'", "''")
+
+            if cond.operator == "equals":
+                sql = f"{col} = '{escaped}'"
+            else:
+                sql = f"({col} != '{escaped}' OR {col} IS NULL)"
+        else:
+            sql = self._operator_to_sql(
+                col, cond.operator, cond.value, cond.second_value
+            )
+
         if cond.negate:
             sql = f"NOT ({sql})"
         return sql
+
+    def _compile_cesc_bill_ac_month(self, cond: AttributeCondition) -> str:
+        """Compile the CESC monthly bill attribute without joining monthly rows."""
+        import re
+
+        monthly_table = "silver_gold.cesc_customer_monthly"
+
+        def literal(value: Any) -> str:
+            text = str(value).strip()
+            if not re.fullmatch(r"\d{6}", text):
+                raise ValueError("cesc.bill_ac_month values must be YYYYMM strings")
+            return self._quote(text)
+
+        values = cond.value if isinstance(cond.value, list) else [cond.value]
+
+        if cond.operator == "exists":
+            predicate = "1=1"
+        elif cond.operator == "not_exists":
+            predicate = "1=1"
+        elif cond.operator in ("equals", "not_equals"):
+            predicate = f"cm.bill_ac_month = {literal(cond.value)}"
+        elif cond.operator in ("in_list", "not_in_list"):
+            if not values:
+                raise ValueError("cesc.bill_ac_month list cannot be empty")
+            predicate = "(" + " OR ".join(
+                f"cm.bill_ac_month = {literal(value)}" for value in values
+            ) + ")"
+        elif cond.operator in (
+            "before", "after", "greater_than", "less_than",
+            "greater_than_or_equal", "less_than_or_equal",
+        ):
+            symbols = {
+                "before": "<", "less_than": "<",
+                "after": ">", "greater_than": ">",
+                "greater_than_or_equal": ">=", "less_than_or_equal": "<=",
+            }
+            predicate = f"cm.bill_ac_month {symbols[cond.operator]} {literal(cond.value)}"
+        elif cond.operator in ("between", "not_between"):
+            predicate = (
+                f"cm.bill_ac_month BETWEEN {literal(cond.value)} "
+                f"AND {literal(cond.second_value)}"
+            )
+        else:
+            raise ValueError(f"Unsupported operator for cesc.bill_ac_month: {cond.operator}")
+
+        subquery = (
+            f"EXISTS (SELECT 1 FROM {monthly_table} cm "
+            "WHERE cm.cesc_entity_id = p.cesc_entity_id"
+        )
+        if cond.operator not in ("exists", "not_exists"):
+            subquery += f" AND {predicate}"
+        subquery += ")"
+
+        if cond.operator in ("not_equals", "not_in_list", "not_between", "not_exists"):
+            subquery = f"NOT ({subquery})"
+        if cond.negate:
+            subquery = f"NOT ({subquery})"
+        return subquery
 
     def _compile_bt_attribute(self, cond: AttributeCondition) -> str:
         """
@@ -760,19 +875,22 @@ class PgCompiler:
         
         inner_condition = self._operator_to_sql(col, cond.operator, cond.value, cond.second_value)
         from_clause = f"{self._tbl_bt} bt"
+        customer_contact_column = (
+            "p.mobile_number" if self.brand_code == "power_cesc" else "p.canonical_mobile"
+        )
 
         if cond.negate:
             return (
                 f"NOT EXISTS (\n"
                 f"  SELECT 1 FROM {from_clause}\n"
-                f"  WHERE RIGHT(bt.mobile_number, 10) = RIGHT(p.canonical_mobile, 10)\n"
+                f"  WHERE RIGHT(bt.mobile_number, 10) = RIGHT({customer_contact_column}, 10)\n"
                 f"    AND {inner_condition}\n"
                 f")"
             )
         return (
             f"EXISTS (\n"
             f"  SELECT 1 FROM {from_clause}\n"
-            f"  WHERE RIGHT(bt.mobile_number, 10) = RIGHT(p.canonical_mobile, 10)\n"
+            f"  WHERE RIGHT(bt.mobile_number, 10) = RIGHT({customer_contact_column}, 10)\n"
             f"    AND {inner_condition}\n"
             f")"
         )
@@ -823,9 +941,10 @@ class PgCompiler:
 
     def _compile_segment_membership(self, cond: SegmentMembershipCondition) -> str:
         table = f"segment_results_{cond.segment_id.replace('-', '_')}"
+        identity_column = "p.cesc_entity_id" if self.brand_code == "power_cesc" else "p.unified_id"
         if cond.operator == "is_member":
-            return f"p.unified_id IN (SELECT customer_id FROM {table})"
-        return f"p.unified_id NOT IN (SELECT customer_id FROM {table})"
+            return f"{identity_column} IN (SELECT customer_id FROM {table})"
+        return f"{identity_column} NOT IN (SELECT customer_id FROM {table})"
 
     def _compile_cross_brand(self, cond: CrossBrandCondition) -> str:
         # For Spencer's POC, cross-brand is not applicable
@@ -836,6 +955,16 @@ class PgCompiler:
     # =========================================================================
 
     def _resolve_column(self, attribute_key: str) -> str:
+        if self.brand_code == "power_cesc":
+            if attribute_key == "identity.customer_id":
+                return "p.cesc_entity_id"
+            if attribute_key == "identity.email":
+                return "p.email_id"
+            if attribute_key in ("identity.phone", "identity.mobile"):
+                return "p.mobile_number"
+            if attribute_key.startswith("cesc."):
+                return f"p.{attribute_key.split('.', 1)[1]}"
+
         if attribute_key in self.schema_mapping:
             col = self.schema_mapping[attribute_key]
             # Track table dependencies
@@ -1019,6 +1148,213 @@ class PgCompiler:
 
 
 # =============================================================================
+# CESC communication Group View compiler
+# =============================================================================
+
+
+class CescGroupViewPgCompiler(PgCompiler):
+    """Compile CESC rules against logical communication groups.
+
+    This is deliberately opt-in.  The regular ``PgCompiler`` remains the Live
+    Audience compiler for every brand, including CESC when this class is not
+    selected.
+    """
+
+    _DEFAULT_VIEW = "cesc_serving.customer_360_seg_v"
+    _DEFAULT_DECISIONS = "cesc_silver.cesc_bill_only_grouping_decision_20261027"
+
+    def __init__(self, view_name: str | None = None, decision_table: str | None = None):
+        super().__init__(brand_code="power_cesc")
+        import re
+
+        self.view_name = view_name or self._DEFAULT_VIEW
+        self.decision_table = decision_table or self._DEFAULT_DECISIONS
+        identifier = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?$")
+        if not identifier.match(self.view_name) or not identifier.match(self.decision_table):
+            raise ValueError("CESC Group View table names must be simple schema-qualified identifiers")
+
+    def validate_member_map_sql(self) -> str:
+        """Return the runtime integrity check used before Group View queries."""
+        return f"""
+WITH member_map AS (
+    SELECT consumer_no, person_communication_group_id
+    FROM {self.decision_table}
+    WHERE grouping_decision IN ('PERSON_COMMUNICATION_GROUP', 'PERSON_COMMUNICATION_GROUP_EMAIL')
+      AND person_communication_group_id IS NOT NULL
+    GROUP BY consumer_no, person_communication_group_id
+)
+SELECT consumer_no
+FROM member_map
+GROUP BY consumer_no
+HAVING COUNT(DISTINCT person_communication_group_id) > 1
+LIMIT 1
+""".strip()
+
+    @staticmethod
+    def _quote_text(value: Any) -> str:
+        return "'" + str(value if value is not None else "").replace("'", "''") + "'"
+
+    def _base_column(self, attribute_key: str) -> str:
+        if attribute_key == "identity.customer_id" or attribute_key == "cesc.cesc_entity_id":
+            return "p.cesc_entity_id"
+        if attribute_key == "identity.email":
+            return "p.email_id"
+        if attribute_key in ("identity.phone", "identity.mobile"):
+            return "p.mobile_number"
+        if attribute_key.startswith("cesc."):
+            return f"p.{attribute_key.split('.', 1)[1]}"
+        raise ValueError(f"Unsupported Group View attribute: {attribute_key}")
+
+    def _attribute_definition(self, attribute_key: str):
+        if attribute_key == "cesc.bill_ac_month":
+            raise ValueError("cesc.bill_ac_month is unsupported in CESC Group View")
+        definition = ATTRIBUTE_BY_KEY.get(attribute_key)
+        if definition is None or "power_cesc" not in (definition.applicable_brands or []):
+            raise ValueError(f"Unsupported Group View attribute: {attribute_key}")
+        return definition
+
+    def _aggregate_column(self, attribute_key: str) -> str:
+        col = self._base_column(attribute_key)
+        if attribute_key in {"cesc.tenure_days", "cesc.tenure_months"}:
+            return f"MAX({col})"
+        if attribute_key == "cesc.first_bill_date":
+            return f"MIN({col})"
+        if attribute_key == "cesc.average_consumption":
+            return "SUM(p.average_consumption * p.bill_count) / NULLIF(SUM(p.bill_count), 0)"
+        period = {"3m": "3m", "6m": "6m", "12m": "12m"}
+        for suffix, months in period.items():
+            if attribute_key == f"cesc.avg_consumption_{suffix}":
+                return (
+                    f"SUM(p.avg_consumption_{suffix} * p.consumption_months_{suffix}) "
+                    f"/ NULLIF(SUM(p.consumption_months_{suffix}), 0)"
+                )
+        if attribute_key == "cesc.outstanding_burden_ratio":
+            return "100 * SUM(p.arrear_amount) / NULLIF(SUM(p.net_amount), 0)"
+        return f"SUM({col})"
+
+    def _text_member_predicate(self, column: str, operator: str, value: Any, second_value: Any) -> str:
+        if operator == "equals":
+            return f"COALESCE(BOOL_OR({column} ILIKE {self._quote_text(value)}), FALSE)"
+        if operator == "not_equals":
+            return f"NOT COALESCE(BOOL_OR({column} ILIKE {self._quote_text(value)}), FALSE)"
+        if operator == "contains":
+            return f"COALESCE(BOOL_OR({column} ILIKE {self._quote_text('%' + str(value) + '%')}), FALSE)"
+        if operator == "not_contains":
+            return f"NOT COALESCE(BOOL_OR({column} ILIKE {self._quote_text('%' + str(value) + '%')}), FALSE)"
+        if operator == "starts_with":
+            return f"COALESCE(BOOL_OR({column} ILIKE {self._quote_text(str(value) + '%')}), FALSE)"
+        if operator == "ends_with":
+            return f"COALESCE(BOOL_OR({column} ILIKE {self._quote_text('%' + str(value))}), FALSE)"
+        if operator in ("in_list", "not_in_list"):
+            values = value if isinstance(value, list) else [value]
+            predicates = " OR ".join(f"{column} ILIKE {self._quote_text(v)}" for v in values) or "FALSE"
+            positive = f"COALESCE(BOOL_OR({predicates}), FALSE)"
+            return positive if operator == "in_list" else f"NOT {positive}"
+        if operator == "regex_match":
+            return f"COALESCE(BOOL_OR({column} ~ {self._quote_text(value)}), FALSE)"
+        if operator == "is_empty":
+            return f"COALESCE(BOOL_AND({column} IS NULL OR {column} = ''), TRUE)"
+        if operator == "is_not_empty":
+            return f"COALESCE(BOOL_OR({column} IS NOT NULL AND {column} != ''), FALSE)"
+        raise ValueError(f"Unsupported Group View text operator: {operator}")
+
+    def _compile_attribute(self, cond: AttributeCondition) -> str:
+        definition = self._attribute_definition(cond.attribute_key)
+        column = self._base_column(cond.attribute_key)
+        if definition.data_type == AttributeDataType.STRING:
+            sql = self._text_member_predicate(column, cond.operator, cond.value, cond.second_value)
+        else:
+            aggregate = self._aggregate_column(cond.attribute_key)
+            if cond.operator == "is_empty":
+                sql = f"COUNT({column}) = 0"
+            elif cond.operator == "is_not_empty":
+                sql = f"COUNT({column}) > 0"
+            elif cond.operator == "not_between":
+                positive = f"{aggregate} BETWEEN {self._quote(cond.value)} AND {self._quote(cond.second_value)}"
+                sql = f"(NOT ({positive}) OR {aggregate} IS NULL)"
+            else:
+                sql = self._operator_to_sql(aggregate, cond.operator, cond.value, cond.second_value)
+        return f"NOT ({sql})" if cond.negate else sql
+
+    def _group_key(self) -> str:
+        return "CASE WHEN m.person_communication_group_id IS NOT NULL THEN 'G:' || m.person_communication_group_id ELSE 'E:' || p.cesc_entity_id END"
+
+    def _member_map_cte(self) -> str:
+        return (
+            "member_map AS (\n"
+            f"    SELECT consumer_no, person_communication_group_id\n    FROM {self.decision_table}\n"
+            "    WHERE grouping_decision IN ('PERSON_COMMUNICATION_GROUP', 'PERSON_COMMUNICATION_GROUP_EMAIL')\n"
+            "      AND person_communication_group_id IS NOT NULL\n"
+            "    GROUP BY consumer_no, person_communication_group_id\n"
+            ")"
+        )
+
+    def _grouped_query(self, having: str, select: str, definition: SegmentDefinition, outer: bool = False) -> str:
+        key = self._group_key()
+        grouped = (
+            f"SELECT {select}\nFROM {self.view_name} p\n"
+            "LEFT JOIN member_map m USING (consumer_no)\n"
+            f"GROUP BY {key}\nHAVING {having}"
+        )
+        return f"WITH {self._member_map_cte()}\n{grouped}"
+
+    def compile(self, definition: SegmentDefinition) -> str:
+        self._reset()
+        having = self._compile_group(definition.root)
+        key = self._group_key()
+        sql = self._grouped_query(having, f"{key} AS customer_id", definition)
+        if definition.limit:
+            sql += f"\nLIMIT {int(definition.limit)}"
+        return sql
+
+    def compile_count(self, definition: SegmentDefinition) -> str:
+        self._reset()
+        having = self._compile_group(definition.root)
+        key = self._group_key()
+        grouped = self._grouped_query(having, f"{key} AS customer_id", definition)
+        return f"SELECT COUNT(*) AS audience_count\nFROM (\n{grouped}\n) grouped_audience"
+
+    def compile_preview(self, definition: SegmentDefinition, limit: int = 100) -> str:
+        self._reset()
+        having = self._compile_group(definition.root)
+        key = self._group_key()
+        select = (
+            f"{key} AS customer_id,\n"
+            "  MIN(p.mobile_number) AS mobile,\n"
+            "  MIN(p.customer_name) AS name,\n"
+            "  MIN(p.email_id) AS email,\n"
+            "  MIN(p.pincode) AS pincode,\n"
+            "  NULL::text AS registered_store,\n"
+            "  NULL::text AS city"
+        )
+        return self._grouped_query(having, select, definition) + f"\nLIMIT {int(limit)}"
+
+    def compile_summary(self, definition: SegmentDefinition, metrics: list[str]) -> str:
+        self._reset()
+        having = self._compile_group(definition.root)
+        key = self._group_key()
+        group_metrics = {
+            "total_spend": "SUM(COALESCE(p.lifetime_spend, 0))",
+            "avg_spend": "SUM(COALESCE(p.lifetime_spend, 0))",
+            "total_bills": "SUM(COALESCE(p.bill_count, 0))",
+            "avg_bills": "SUM(COALESCE(p.bill_count, 0))",
+        }
+        selected = [f"{key} AS logical_entity_id"]
+        aliases = []
+        for metric in metrics:
+            if metric in group_metrics:
+                selected.append(f"{group_metrics[metric]} AS {metric}_group_value")
+                aliases.append(metric)
+        grouped = self._grouped_query(having, ",\n".join(selected), definition)
+        outer = ["COUNT(*) AS audience_size"]
+        for metric in aliases:
+            if metric.startswith("avg_"):
+                outer.append(f"AVG({metric}_group_value) AS {metric}")
+            else:
+                outer.append(f"SUM({metric}_group_value) AS {metric}")
+        return f"WITH matching_groups AS (\n{grouped}\n)\nSELECT {', '.join(outer)}\nFROM matching_groups"
+
+
 # Corporate / Cross-Brand Compiler
 # =============================================================================
 

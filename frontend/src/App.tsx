@@ -6,7 +6,8 @@ import { SavedSegments } from "./components/saved-segments/SavedSegments";
 import { useSegmentStore } from "./store/segmentStore";
 import type { Brand } from "./types/segment";
 
-type View = "segmentation" | "saved_segments" | "single_view" | "corporate_view";
+
+type View = "segmentation" | "saved_segments" | "single_view" | "corporate_view" ;
 
 function App() {
   const { setBrands, fetchCatalog, catalogLoaded } = useSegmentStore();

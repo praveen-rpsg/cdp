@@ -155,6 +155,7 @@ class AudienceEstimateRequest(BaseModel):
     brand_code: str
     rules: dict
     datalake_config: dict | None = None
+    communication_group_view: bool = False
 
 
 class AudienceEstimateResponse(BaseModel):
@@ -173,6 +174,7 @@ class AudienceSummaryRequest(BaseModel):
     rules: dict
     metrics: list[str] = ["total_spend", "avg_spend", "total_bills", "avg_visits", "spend_per_bill", "spend_per_visit"]
     datalake_config: dict | None = None
+    communication_group_view: bool = False
 
 
 class AudienceSummaryResponse(BaseModel):
@@ -188,6 +190,7 @@ class AudiencePreviewRequest(BaseModel):
     rules: dict
     limit: int = 100
     datalake_config: dict | None = None
+    communication_group_view: bool = False
 
 
 class AudiencePreviewResponse(BaseModel):
@@ -205,6 +208,7 @@ class CompileRequest(BaseModel):
     brand_code: str
     rules: dict
     datalake_config: dict | None = None
+    communication_group_view: bool = False
 
 
 class CompileResponse(BaseModel):

@@ -1,0 +1,23 @@
+Group View / Live Audience Feature Release Manifest
+===============================================
+
+Files included:
+- backend/app/api/v1/segments.py
+  API route plumbing for communication_group_view through the segment estimate, summary, and preview endpoints.
+- backend/app/schemas/api_schemas.py
+  API payload contracts for audience estimate, summary, and preview requests with communication_group_view enabled by default as False.
+- backend/app/services/segmentation/service.py
+  Added communication-group-mode routing and the power_cesc-only effective population estimator while preserving the live audience default.
+- backend/tests/test_group_view.py
+  Regression tests covering Group View routing and Live Audience default behavior.
+- frontend/src/store/segmentStore.ts
+  Zustand state and payload wiring for the Group View toggle and request propagation.
+- frontend/src/components/segment-builder/SegmentBuilder.tsx
+  UI toggle for Live Audience vs Group View plus effective population labeling.
+
+Critical behaviors preserved:
+- Live Audience remains unchanged by default.
+- Group View displays the correctly calculated effective population for power_cesc.
+- Segmentation evaluation uses the aggregated group-level mode when Group View is enabled.
+
+Note: This archive is intentionally limited to the files required for this feature and does not alter unrelated repository changes.
